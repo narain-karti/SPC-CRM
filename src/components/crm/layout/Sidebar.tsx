@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Users, Calendar, CalendarDays, Stethoscope, UserCog,
   Clock, Receipt, BarChart3, LineChart, Bell, Settings, User,
-  ChevronLeft, ChevronDown, Sparkles, Building2, Plus, Zap
+  ChevronLeft, ChevronDown, Sparkles, Building2, Plus, Zap, X
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { branches } from "@/lib/data";
@@ -12,7 +12,6 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Avatar } from "../Avatar";
 import type { Role, ViewKey } from "@/lib/types";
-import * as Accordion from "@radix-ui/react-accordion";
 
 interface NavItem {
   key: ViewKey;
@@ -42,18 +41,18 @@ const bottomNav: NavItem[] = [
   { key: "profile", label: "Profile", icon: User, roles: ["master_admin", "branch_admin", "receptionist", "physiotherapist"] },
 ];
 
-const roleLabels: Record<Role, string> = {
+export const roleLabels: Record<Role, string> = {
   master_admin: "Master Admin",
   branch_admin: "Branch Admin",
   receptionist: "Receptionist",
   physiotherapist: "Physiotherapist",
 };
 
-const roleUser: Record<Role, { name: string; color: string }> = {
-  master_admin: { name: "Aarav Mehta", color: "#D6F04C" },
-  branch_admin: { name: "Rajesh Kumar", color: "#B79AFB" },
-  receptionist: { name: "Lakshmi Iyer", color: "#5EEAD4" },
-  physiotherapist: { name: "Dr. Ananya K.", color: "#FBBF24" },
+export const roleUser: Record<Role, { name: string; color: string; email: string }> = {
+  master_admin: { name: "Aarav Mehta", color: "#D6F04C", email: "aarav@stabilityphysio.com" },
+  branch_admin: { name: "Rajesh Kumar", color: "#B79AFB", email: "rajesh@stabilityphysio.com" },
+  receptionist: { name: "Lakshmi Iyer", color: "#5EEAD4", email: "lakshmi@stabilityphysio.com" },
+  physiotherapist: { name: "Dr. Ananya K.", color: "#FBBF24", email: "ananya@stabilityphysio.com" },
 };
 
 export function Sidebar() {
@@ -70,8 +69,111 @@ export function Sidebar() {
       initial={false}
       animate={{ width: sidebarCollapsed ? 76 : 268 }}
       transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-      className="relative z-30 flex h-screen shrink-0 flex-col bg-[#0F1117] text-white/85"
+      className="relative z-30 hidden md:flex h-screen shrink-0 flex-col bg-[#0F1117] text-white/85"
     >
+      <SidebarContent
+        collapsed={sidebarCollapsed}
+        toggleSidebar={toggleSidebar}
+        currentView={currentView}
+        setView={setView}
+        currentRole={currentRole}
+        currentBranchId={currentBranchId}
+        setBranch={setBranch}
+        currentBranch={currentBranch}
+        user={user}
+        filteredNav={filteredNav}
+        filteredBottom={filteredBottom}
+        branchOpen={branchOpen}
+        setBranchOpen={setBranchOpen}
+      />
+    </motion.aside>
+  );
+}
+
+export function MobileSidebar() {
+  const {
+    mobileSidebarOpen, setMobileSidebarOpen,
+    sidebarCollapsed, toggleSidebar,
+    currentView, setView, currentRole, currentBranchId, setBranch,
+  } = useAppStore();
+  const [branchOpen, setBranchOpen] = useState(false);
+
+  const filteredNav = navItems.filter(n => n.roles.includes(currentRole));
+  const filteredBottom = bottomNav.filter(n => n.roles.includes(currentRole));
+  const currentBranch = branches.find(b => b.id === currentBranchId);
+  const user = roleUser[currentRole];
+
+  return (
+    <AnimatePresence>
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+          <motion.aside
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
+            transition={{ type: "spring", stiffness: 360, damping: 38 }}
+            className="absolute left-0 top-0 bottom-0 flex w-[280px] max-w-[85vw] flex-col bg-[#0F1117] text-white/85 safe-bottom"
+          >
+            <button
+              onClick={() => setMobileSidebarOpen(false)}
+              className="absolute -right-3 top-5 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white shadow-lg"
+            >
+              <X className="h-4 w-4 text-[#0F1117]" />
+            </button>
+            <SidebarContent
+              collapsed={false}
+              toggleSidebar={() => setMobileSidebarOpen(false)}
+              currentView={currentView}
+              setView={(v) => { setView(v); setMobileSidebarOpen(false); }}
+              currentRole={currentRole}
+              currentBranchId={currentBranchId}
+              setBranch={setBranch}
+              currentBranch={currentBranch}
+              user={user}
+              filteredNav={filteredNav}
+              filteredBottom={filteredBottom}
+              branchOpen={branchOpen}
+              setBranchOpen={setBranchOpen}
+              isMobile
+            />
+          </motion.aside>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function SidebarContent(props: {
+  collapsed: boolean;
+  toggleSidebar: () => void;
+  currentView: ViewKey;
+  setView: (v: ViewKey) => void;
+  currentRole: Role;
+  currentBranchId: string;
+  setBranch: (id: string) => void;
+  currentBranch?: typeof branches[number];
+  user: { name: string; color: string };
+  filteredNav: NavItem[];
+  filteredBottom: NavItem[];
+  branchOpen: boolean;
+  setBranchOpen: (open: boolean) => void;
+  isMobile?: boolean;
+}) {
+  const {
+    collapsed, toggleSidebar, currentView, setView, currentRole,
+    currentBranchId, setBranch, currentBranch, user,
+    filteredNav, filteredBottom, branchOpen, setBranchOpen, isMobile,
+  } = props;
+
+  return (
+    <>
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 pt-5 pb-4">
         <motion.div
@@ -81,7 +183,7 @@ export function Sidebar() {
           <Sparkles className="h-5 w-5 text-[#0F1117]" strokeWidth={2.5} />
         </motion.div>
         <AnimatePresence>
-          {!sidebarCollapsed && (
+          {!collapsed && (
             <motion.div
               initial={{ opacity: 0, x: -8 }}
               animate={{ opacity: 1, x: 0 }}
@@ -103,15 +205,15 @@ export function Sidebar() {
       {/* Branch Switcher */}
       <div className="px-3 pb-3">
         <button
-          onClick={() => !sidebarCollapsed && setBranchOpen(o => !o)}
+          onClick={() => !collapsed && setBranchOpen(!branchOpen)}
           className={cn(
             "group flex w-full items-center gap-2.5 rounded-2xl bg-white/[0.04] px-3 py-2.5 ring-1 ring-white/10 transition-all hover:bg-white/[0.07] hover:ring-white/20",
-            sidebarCollapsed && "justify-center px-0"
+            collapsed && "justify-center px-0"
           )}
         >
           <Building2 className="h-4 w-4 shrink-0 text-[#D6F04C]" />
           <AnimatePresence>
-            {!sidebarCollapsed && (
+            {!collapsed && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -125,12 +227,12 @@ export function Sidebar() {
               </motion.div>
             )}
           </AnimatePresence>
-          {!sidebarCollapsed && (
+          {!collapsed && (
             <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-white/40 transition-transform", branchOpen && "rotate-180")} />
           )}
         </button>
         <AnimatePresence>
-          {branchOpen && !sidebarCollapsed && (
+          {branchOpen && !collapsed && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
@@ -147,7 +249,7 @@ export function Sidebar() {
                   )}
                 >
                   <span>All Branches</span>
-                  <span className="text-[10px] opacity-60">5</span>
+                  <span className="text-[10px] opacity-60">{branches.length}</span>
                 </button>
                 {branches.map(b => (
                   <button
@@ -179,7 +281,7 @@ export function Sidebar() {
               key={item.key}
               item={item}
               active={currentView === item.key || (item.key === "patients" && currentView === "patient_detail")}
-              collapsed={sidebarCollapsed}
+              collapsed={collapsed}
               onClick={() => setView(item.key)}
               index={i}
             />
@@ -194,7 +296,7 @@ export function Sidebar() {
               key={item.key}
               item={item}
               active={currentView === item.key}
-              collapsed={sidebarCollapsed}
+              collapsed={collapsed}
               onClick={() => setView(item.key)}
               index={i}
             />
@@ -208,12 +310,12 @@ export function Sidebar() {
           onClick={() => setView("profile")}
           className={cn(
             "group flex w-full items-center gap-3 rounded-2xl p-2 transition-colors hover:bg-white/5",
-            sidebarCollapsed && "justify-center"
+            collapsed && "justify-center"
           )}
         >
           <Avatar name={user.name} color={user.color} size="sm" ring={false} />
           <AnimatePresence>
-            {!sidebarCollapsed && (
+            {!collapsed && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -228,16 +330,18 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Collapse toggle */}
-      <button
-        onClick={toggleSidebar}
-        className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/5 transition-all hover:scale-110"
-      >
-        <motion.div animate={{ rotate: sidebarCollapsed ? 180 : 0 }} transition={{ duration: 0.3 }}>
-          <ChevronLeft className="h-3.5 w-3.5 text-[#0F1117]" />
-        </motion.div>
-      </button>
-    </motion.aside>
+      {/* Collapse toggle - only on desktop */}
+      {!isMobile && (
+        <button
+          onClick={toggleSidebar}
+          className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/5 transition-all hover:scale-110"
+        >
+          <motion.div animate={{ rotate: collapsed ? 180 : 0 }} transition={{ duration: 0.3 }}>
+            <ChevronLeft className="h-3.5 w-3.5 text-[#0F1117]" />
+          </motion.div>
+        </button>
+      )}
+    </>
   );
 }
 

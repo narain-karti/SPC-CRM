@@ -1,241 +1,430 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
-  Calendar, Clock, Plus, ChevronLeft, ChevronRight, Filter,
-  Users, Phone, MessageCircle, Bell, MoreHorizontal, Search,
-  Stethoscope, CalendarDays, List, Grid3x3, Video, MapPin
+  Calendar, Clock, Plus, ChevronLeft, ChevronRight,
+  Users, Phone, MoreHorizontal, Search, List, Grid3x3,
+  Trash2, CheckCircle2, XCircle, PlayCircle, FileText, FileSpreadsheet, Download, ChevronDown
 } from "lucide-react";
-import { appointments, patients, therapists, branches } from "@/lib/data";
+import { patients, therapists, branches } from "@/lib/data";
 import { useAppStore } from "@/lib/store";
 import { Avatar } from "../Avatar";
 import { StatusBadge } from "../StatusBadge";
 import { SectionHeader } from "../SectionHeader";
-import { cn } from "@/lib/utils";
+import { Button } from "../Form";
+import { AppointmentModal } from "../modals/AppointmentModal";
+import { cn, formatDate, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF } from "@/lib/utils";
+import * as Popover from "@radix-ui/react-popover";
+import { toast } from "sonner";
+import type { AppointmentStatus } from "@/lib/types";
 
-type ViewMode = "list" | "day" | "week" | "month";
+type ViewMode = "list" | "day" | "week";
 
 export function AppointmentsView() {
-  const { openPatient, setView } = useAppStore();
+  const { appointments, openPatient, updateAppointment, deleteAppointment, currentBranchId } = useAppStore();
   const [mode, setMode] = useState<ViewMode>("list");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [showModal, setShowModal] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
 
-  const filtered = appointments.filter(a => {
-    if (search) {
-      const q = search.toLowerCase();
-      if (!a.patientName.toLowerCase().includes(q) && !a.therapistName.toLowerCase().includes(q)) return false;
-    }
-    if (statusFilter !== "all" && a.status !== statusFilter) return false;
-    return true;
-  });
+  const filtered = useMemo(() => {
+    return appointments.filter(a => {
+      if (currentBranchId !== "all" && a.branchId !== currentBranchId) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (!a.patientName.toLowerCase().includes(q) && !a.therapistName.toLowerCase().includes(q)) return false;
+      }
+      if (statusFilter !== "all" && a.status !== statusFilter) return false;
+      return true;
+    }).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  }, [appointments, search, statusFilter, currentBranchId]);
 
-  const groupedByDate = filtered.reduce((acc, a) => {
-    (acc[a.date] = acc[a.date] || []).push(a);
-    return acc;
-  }, {} as Record<string, typeof appointments>);
+  const groupedByDate = useMemo(() => {
+    return filtered.reduce((acc, a) => {
+      (acc[a.date] = acc[a.date] || []).push(a);
+      return acc;
+    }, {} as Record<string, typeof filtered>);
+  }, [filtered]);
+
+  function setStatus(id: string, status: AppointmentStatus) {
+    updateAppointment(id, { status });
+    toast.success(`Appointment marked as ${status.replace("_", " ")}`);
+  }
+
+  function handleDelete(id: string) {
+    deleteAppointment(id);
+    toast.success("Appointment deleted");
+  }
+
+  function handleExportCSV() {
+    const rows = filtered.map(a => ({
+      id: a.id,
+      patient: a.patientName,
+      therapist: a.therapistName,
+      branch: branches.find(b => b.id === a.branchId)?.name || "",
+      date: a.date,
+      time: a.time,
+      duration: a.duration,
+      type: a.type,
+      status: a.status,
+      notes: a.notes || "",
+    }));
+    exportToCSV(`appointments_${Date.now()}.csv`, rows);
+    toast.success("CSV exported");
+    setShowExport(false);
+  }
+  function handleExportExcel() {
+    const rows = filtered.map(a => ({
+      patient: a.patientName, therapist: a.therapistName,
+      branch: branches.find(b => b.id === a.branchId)?.name || "",
+      date: a.date, time: a.time, duration: a.duration,
+      type: a.type, status: a.status,
+    }));
+    exportToExcel({
+      filename: `appointments_${Date.now()}.xls`,
+      sheetName: "Appointments",
+      columns: [
+        { key: "patient", label: "Patient" },
+        { key: "therapist", label: "Therapist" },
+        { key: "branch", label: "Branch" },
+        { key: "date", label: "Date" },
+        { key: "time", label: "Time" },
+        { key: "duration", label: "Duration (min)" },
+        { key: "type", label: "Type" },
+        { key: "status", label: "Status" },
+      ],
+      rows,
+    });
+    toast.success("Excel exported");
+    setShowExport(false);
+  }
+  function handleExportPDF() {
+    const rows = filtered.map(a => ({
+      patient: a.patientName,
+      therapist: a.therapistName,
+      branch: branches.find(b => b.id === a.branchId)?.name || "",
+      date: formatDate(a.date),
+      time: a.time,
+      duration: `${a.duration} min`,
+      type: a.type,
+      status: a.status,
+    }));
+    exportToHTMLPDF({
+      filename: `appointments_${Date.now()}.html`,
+      title: "Appointments Schedule",
+      subtitle: `${filtered.length} appointment(s)`,
+      meta: [
+        { label: "Total", value: String(filtered.length) },
+        { label: "Branch", value: currentBranchId === "all" ? "All Branches" : branches.find(b => b.id === currentBranchId)?.name || "—" },
+        { label: "Generated", value: new Date().toLocaleString("en-IN") },
+      ],
+      columns: [
+        { key: "patient", label: "Patient" },
+        { key: "therapist", label: "Therapist" },
+        { key: "branch", label: "Branch" },
+        { key: "date", label: "Date" },
+        { key: "time", label: "Time" },
+        { key: "duration", label: "Duration" },
+        { key: "type", label: "Type" },
+        { key: "status", label: "Status" },
+      ],
+      rows,
+      summary: [
+        { label: "Total", value: String(filtered.length), accent: "lime" },
+        { label: "Completed", value: String(filtered.filter(a => a.status === "completed").length), accent: "emerald" },
+        { label: "Scheduled", value: String(filtered.filter(a => a.status === "scheduled").length), accent: "blue" },
+        { label: "Cancelled", value: String(filtered.filter(a => a.status === "cancelled").length), accent: "rose" },
+      ],
+    });
+    toast.success("PDF opened — print to save");
+    setShowExport(false);
+  }
+
+  const statusOptions = [
+    { value: "all", label: "All Status" },
+    { value: "scheduled", label: "Scheduled" },
+    { value: "waiting", label: "Waiting" },
+    { value: "consultation", label: "In Consultation" },
+    { value: "therapy", label: "In Therapy" },
+    { value: "completed", label: "Completed" },
+    { value: "cancelled", label: "Cancelled" },
+    { value: "no_show", label: "No Show" },
+  ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 md:space-y-6">
       <SectionHeader
         title="Appointments"
-        description={`${filtered.length} appointments scheduled`}
+        description={`${filtered.length} appointments · ${filtered.filter(a => a.status === "scheduled").length} upcoming`}
         icon={<Calendar className="h-5 w-5" />}
         action={
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-2xl bg-card p-1 premium-shadow ring-1 ring-border/40">
-              {([
-                { key: "list", icon: List },
-                { key: "day", icon: Clock },
-                { key: "week", icon: Grid3x3 },
-                { key: "month", icon: CalendarDays },
-              ] as const).map(opt => {
-                const Icon = opt.icon;
-                return (
-                  <button
-                    key={opt.key}
-                    onClick={() => setMode(opt.key)}
-                    className={cn(
-                      "relative flex h-8 w-8 items-center justify-center rounded-xl transition-colors",
-                      mode === opt.key ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {mode === opt.key && (
-                      <motion.div layoutId="appt-mode" className="absolute inset-0 rounded-xl bg-primary/8" />
-                    )}
-                    <Icon className="h-4 w-4 relative z-10" />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Popover.Root open={showExport} onOpenChange={setShowExport}>
+              <Popover.Trigger asChild>
+                <Button variant="outline" size="default">
+                  <Download className="h-4 w-4" /> Export
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content align="end" sideOffset={8} className="z-50 w-56 rounded-2xl bg-popover p-2 premium-shadow-lg ring-1 ring-border">
+                  <button onClick={handleExportCSV} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm hover:bg-muted">
+                    <FileText className="h-4 w-4 text-emerald-500" /> CSV
                   </button>
-                );
-              })}
-            </div>
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              className="flex h-10 items-center gap-2 rounded-2xl bg-gradient-to-br from-[#D6F04C] to-[#A3C128] px-4 text-sm font-semibold text-[#0F1117] shadow-[0_8px_24px_-6px_rgba(214,240,76,0.5)]"
-            >
-              <Plus className="h-4 w-4" strokeWidth={2.5} /> Book Appointment
-            </motion.button>
+                  <button onClick={handleExportExcel} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm hover:bg-muted">
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Excel
+                  </button>
+                  <button onClick={handleExportPDF} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm hover:bg-muted">
+                    <FileText className="h-4 w-4 text-rose-500" /> PDF
+                  </button>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+            <Button variant="lime" onClick={() => setShowModal(true)}>
+              <Plus className="h-4 w-4" /> New Appointment
+            </Button>
           </div>
         }
       />
 
-      {/* Filter bar */}
-      <div className="rounded-3xl bg-card p-3 premium-shadow ring-1 ring-border/40">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex h-10 flex-1 min-w-[220px] items-center gap-2.5 rounded-2xl bg-muted/60 px-3.5 ring-1 ring-border/60">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search patient or therapist…"
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-          </div>
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            {["all", "scheduled", "waiting", "consultation", "therapy", "completed", "cancelled", "no_show"].map(s => (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={cn(
-                  "rounded-xl px-3 py-2 text-xs font-medium transition-all whitespace-nowrap",
-                  statusFilter === s ? "bg-foreground text-background" : "bg-muted/60 text-muted-foreground hover:bg-muted ring-1 ring-border/60"
-                )}
-              >
-                {s === "all" ? "All" : s === "no_show" ? "No Show" : s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
-            ))}
-          </div>
+      {/* Filters & View Mode */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search patient, therapist…"
+            className="h-10 w-full rounded-xl bg-card pl-9 pr-3 text-sm ring-1 ring-border focus:ring-2 focus:ring-foreground/20 outline-none"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value)}
+          className="h-10 rounded-xl bg-card px-3 text-sm ring-1 ring-border focus:ring-2 focus:ring-foreground/20 outline-none"
+        >
+          {statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <div className="flex items-center gap-1 rounded-xl bg-card p-1 ring-1 ring-border">
+          {([
+            { key: "list", icon: List, label: "List" },
+            { key: "day", icon: Clock, label: "Day" },
+            { key: "week", icon: Grid3x3, label: "Week" },
+          ] as const).map(m => (
+            <button
+              key={m.key}
+              onClick={() => setMode(m.key)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-medium transition-all",
+                mode === m.key ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <m.icon className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{m.label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
+      {/* List view */}
       {mode === "list" && (
-        <div className="space-y-5">
-          {Object.entries(groupedByDate).map(([date, appts], gi) => {
-            const d = new Date(date);
-            const isToday = date === appointments[0].date;
-            return (
-              <div key={date}>
-                <div className="mb-3 flex items-center gap-3">
-                  <div className={cn(
-                    "flex h-12 w-12 flex-col items-center justify-center rounded-2xl",
-                    isToday ? "bg-[#D6F04C] text-[#0F1117]" : "bg-card text-foreground premium-shadow ring-1 ring-border/40"
-                  )}>
-                    <span className="text-[9px] uppercase font-bold leading-none">{d.toLocaleDateString("en-US", { weekday: "short" })}</span>
-                    <span className="text-lg font-bold leading-none mt-0.5">{d.getDate()}</span>
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold">
-                      {isToday ? "Today" : d.toLocaleDateString("en-US", { weekday: "long" })}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {d.toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" })} · {appts.length} appointments
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {appts.map((appt, i) => {
-                    const p = patients.find(p => p.id === appt.patientId);
-                    const t = therapists.find(t => t.id === appt.therapistId);
-                    const branch = branches.find(b => b.id === appt.branchId);
-                    return (
-                      <motion.div
-                        key={appt.id}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.04 }}
-                        whileHover={{ x: 4 }}
-                        className="group flex items-center gap-3 rounded-2xl bg-card p-3 premium-shadow ring-1 ring-border/40 cursor-pointer hover:ring-border"
-                        onClick={() => openPatient(appt.patientId)}
-                      >
-                        <div className="flex flex-col items-center gap-0.5 min-w-[60px]">
-                          <span className="text-sm font-bold tabular-nums">{appt.time}</span>
-                          <span className="text-[10px] text-muted-foreground">{appt.duration}min</span>
-                        </div>
-                        <div className="h-12 w-1 rounded-full" style={{ background: t?.avatarColor }} />
-                        <Avatar name={appt.patientName} color={p?.avatarColor || "#D6F04C"} size="md" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium truncate">{appt.patientName}</span>
-                            <StatusBadge status={appt.status} size="sm" />
-                          </div>
-                          <div className="text-[11px] text-muted-foreground truncate mt-0.5">
-                            {appt.therapistName} · {appt.type.replace("_", " ")} · {branch?.name}
-                          </div>
-                        </div>
-                        <div className="hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-muted" title="Call">
-                            <Phone className="h-3.5 w-3.5" />
-                          </button>
-                          <button className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-muted" title="WhatsApp">
-                            <MessageCircle className="h-3.5 w-3.5 text-[#34D399]" />
-                          </button>
-                          <button className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-muted" title="Video">
-                            <Video className="h-3.5 w-3.5 text-[#B79AFB]" />
-                          </button>
-                          <button className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-muted">
-                            <MoreHorizontal className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
+        <div className="space-y-6">
+          {Object.entries(groupedByDate).map(([date, appts]) => (
+            <div key={date}>
+              <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm py-2 mb-2 flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-[#D6F04C]" />
+                <h3 className="text-sm font-semibold">{formatDate(date)}</h3>
+                <span className="text-xs text-muted-foreground">· {appts.length} appointment(s)</span>
               </div>
-            );
-          })}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {appts.map((a, i) => (
+                  <AppointmentCard
+                    key={a.id}
+                    appointment={a}
+                    index={i}
+                    onOpenPatient={() => openPatient(a.patientId)}
+                    onStatus={(s) => setStatus(a.id, s)}
+                    onDelete={() => handleDelete(a.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="py-16 text-center">
+              <Calendar className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" />
+              <p className="text-sm text-muted-foreground">No appointments found</p>
+              <Button variant="lime" size="sm" className="mt-3" onClick={() => setShowModal(true)}>
+                <Plus className="h-3.5 w-3.5" /> Schedule one
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
-      {mode === "day" && <DayView />}
-      {mode === "week" && <WeekView />}
-      {mode === "month" && <MonthView />}
+      {/* Day view */}
+      {mode === "day" && (
+        <DayView
+          appointments={filtered.filter(a => a.date === selectedDate)}
+          selectedDate={selectedDate}
+          setSelectedDate={setSelectedDate}
+          onOpenPatient={openPatient}
+          onStatus={setStatus}
+        />
+      )}
+
+      {/* Week view */}
+      {mode === "week" && (
+        <WeekView
+          appointments={filtered}
+          selectedDate={selectedDate}
+          setSelectedDate={setSelectedDate}
+          onOpenPatient={openPatient}
+        />
+      )}
+
+      <AppointmentModal open={showModal} onOpenChange={setShowModal} />
     </div>
   );
 }
 
-function DayView() {
-  const hours = Array.from({ length: 12 }).map((_, i) => 8 + i); // 8 AM - 7 PM
-  const todayAppts = appointments.filter(a => a.date === appointments[0].date);
+function AppointmentCard({
+  appointment, index, onOpenPatient, onStatus, onDelete,
+}: {
+  appointment: any;
+  index: number;
+  onOpenPatient: () => void;
+  onStatus: (s: AppointmentStatus) => void;
+  onDelete: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const branch = branches.find(b => b.id === appointment.branchId);
 
   return (
-    <div className="rounded-3xl bg-card p-4 md:p-6 premium-shadow ring-1 ring-border/40">
-      <div className="space-y-1">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.03 }}
+      className="group rounded-2xl bg-card ring-1 ring-border p-4 hover:ring-foreground/20 transition-all"
+    >
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-xs font-bold ring-1 ring-border">
+            {appointment.time}
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{appointment.type.replace("_", " ")}</div>
+            <div className="text-xs text-muted-foreground">{appointment.duration} min</div>
+          </div>
+        </div>
+        <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <Popover.Trigger asChild>
+            <button className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-muted opacity-0 group-hover:opacity-100">
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content align="end" sideOffset={4} className="z-50 w-48 rounded-xl bg-popover p-1.5 premium-shadow-lg ring-1 ring-border">
+              <button onClick={() => { onStatus("waiting"); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-muted">
+                <Clock className="h-3.5 w-3.5" /> Mark Waiting
+              </button>
+              <button onClick={() => { onStatus("consultation"); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-muted">
+                <PlayCircle className="h-3.5 w-3.5" /> Start Consultation
+              </button>
+              <button onClick={() => { onStatus("completed"); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-muted">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> Mark Completed
+              </button>
+              <button onClick={() => { onStatus("cancelled"); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-muted text-rose-500">
+                <XCircle className="h-3.5 w-3.5" /> Cancel
+              </button>
+              <div className="my-1 h-px bg-border" />
+              <button onClick={() => { onDelete(); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-rose-500/10 text-rose-500">
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </button>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+      </div>
+      <button onClick={onOpenPatient} className="block w-full text-left">
+        <div className="flex items-center gap-2 mb-2">
+          <Avatar name={appointment.patientName} color="#D6F04C" size="sm" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-foreground truncate">{appointment.patientName}</div>
+            <div className="text-[11px] text-muted-foreground truncate">{appointment.therapistName}</div>
+          </div>
+        </div>
+      </button>
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: branch?.color }} />
+          {branch?.name}
+        </span>
+        <StatusBadge status={appointment.status} size="sm" />
+      </div>
+      {appointment.notes && (
+        <p className="mt-2 text-[11px] text-muted-foreground line-clamp-2 italic">"{appointment.notes}"</p>
+      )}
+    </motion.div>
+  );
+}
+
+function DayView({ appointments, selectedDate, setSelectedDate, onOpenPatient, onStatus }: {
+  appointments: any[];
+  selectedDate: string;
+  setSelectedDate: (d: string) => void;
+  onOpenPatient: (id: string) => void;
+  onStatus: (id: string, s: AppointmentStatus) => void;
+}) {
+  const hours = Array.from({ length: 12 }).map((_, i) => 8 + i); // 8 AM to 7 PM
+
+  function shiftDate(days: number) {
+    const d = new Date(selectedDate);
+    d.setDate(d.getDate() + days);
+    setSelectedDate(d.toISOString().split("T")[0]);
+  }
+
+  return (
+    <div className="rounded-2xl bg-card ring-1 ring-border overflow-hidden">
+      <div className="flex items-center justify-between p-4 border-b border-border/60">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => shiftDate(-1)}><ChevronLeft className="h-4 w-4" /></Button>
+          <h3 className="text-sm font-semibold">{formatDate(selectedDate, { withTime: false })}</h3>
+          <Button variant="ghost" size="icon" onClick={() => shiftDate(1)}><ChevronRight className="h-4 w-4" /></Button>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}>Today</Button>
+      </div>
+      <div className="divide-y divide-border/40">
         {hours.map(h => {
-          const appts = todayAppts.filter(a => parseInt(a.time.split(":")[0]) === h);
+          const hourAppts = appointments.filter(a => parseInt(a.time.split(":")[0]) === h);
+          const ampm = h >= 12 ? "PM" : "AM";
+          const hour12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
           return (
-            <div key={h} className="flex gap-3 group">
-              <div className="w-14 text-xs text-muted-foreground font-medium pt-1.5">
-                {h > 12 ? h - 12 : h}:00 {h >= 12 ? "PM" : "AM"}
+            <div key={h} className="flex gap-3 p-3 min-h-[60px]">
+              <div className="w-16 shrink-0 text-xs font-semibold text-muted-foreground pt-1">
+                {hour12}:00 {ampm}
               </div>
-              <div className="flex-1 min-h-[56px] border-t border-border/40 group-hover:border-border transition-colors relative">
-                <div className="space-y-1 pt-1">
-                  {appts.map(a => {
-                    const p = patients.find(p => p.id === a.patientId);
-                    const t = therapists.find(t => t.id === a.therapistId);
-                    return (
-                      <motion.div
-                        key={a.id}
-                        initial={{ opacity: 0, x: -8 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        whileHover={{ x: 4, scale: 1.01 }}
-                        className="flex items-center gap-2 rounded-xl p-2 cursor-pointer text-white"
-                        style={{
-                          background: `linear-gradient(135deg, ${t?.avatarColor}40 0%, ${t?.avatarColor}20 100%)`,
-                          borderLeft: `3px solid ${t?.avatarColor}`,
-                        }}
-                      >
-                        <Avatar name={a.patientName} color={p?.avatarColor || "#D6F04C"} size="xs" ring={false} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-foreground truncate">{a.patientName}</div>
-                          <div className="text-[10px] text-muted-foreground truncate">{a.therapistName} · {a.duration}min</div>
-                        </div>
-                        <StatusBadge status={a.status} size="sm" />
-                      </motion.div>
-                    );
-                  })}
-                </div>
+              <div className="flex-1 space-y-2">
+                {hourAppts.map(a => (
+                  <div
+                    key={a.id}
+                    onClick={() => onOpenPatient(a.patientId)}
+                    className="cursor-pointer rounded-xl bg-gradient-to-r from-[#D6F04C]/15 to-[#D6F04C]/5 p-3 ring-1 ring-[#D6F04C]/30 hover:ring-[#D6F04C]/60 transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-semibold">{a.patientName}</div>
+                        <div className="text-[11px] text-muted-foreground">{a.time} · {a.therapistName}</div>
+                      </div>
+                      <StatusBadge status={a.status} size="sm" />
+                    </div>
+                  </div>
+                ))}
+                {hourAppts.length === 0 && (
+                  <div className="text-[11px] text-muted-foreground/40 italic">No appointments</div>
+                )}
               </div>
             </div>
           );
@@ -245,148 +434,54 @@ function DayView() {
   );
 }
 
-function WeekView() {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const today = new Date();
-  const weekStart = new Date(today);
-  weekStart.setDate(today.getDate() - today.getDay() + 1);
+function WeekView({ appointments, selectedDate, setSelectedDate, onOpenPatient }: {
+  appointments: any[];
+  selectedDate: string;
+  setSelectedDate: (d: string) => void;
+  onOpenPatient: (id: string) => void;
+}) {
+  const startOfWeek = new Date(selectedDate);
+  const day = startOfWeek.getDay();
+  startOfWeek.setDate(startOfWeek.getDate() - day);
 
-  return (
-    <div className="rounded-3xl bg-card p-4 premium-shadow ring-1 ring-border/40 overflow-x-auto">
-      <div className="grid grid-cols-[60px_repeat(7,1fr)] gap-2 min-w-[800px]">
-        <div></div>
-        {days.map((d, i) => {
-          const date = new Date(weekStart);
-          date.setDate(weekStart.getDate() + i);
-          const isToday = date.toDateString() === today.toDateString();
-          return (
-            <div key={d} className="text-center pb-2">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{d}</div>
-              <div className={cn(
-                "mx-auto mt-1 flex h-9 w-9 items-center justify-center rounded-xl text-sm font-semibold",
-                isToday ? "bg-[#D6F04C] text-[#0F1117]" : "bg-muted/60 text-foreground"
-              )}>
-                {date.getDate()}
-              </div>
-            </div>
-          );
-        })}
-
-        {Array.from({ length: 8 }).map((_, hourIdx) => (
-          <>
-            <div key={`h${hourIdx}`} className="text-[10px] text-muted-foreground font-medium pt-2 text-right pr-1">
-              {8 + hourIdx}:00
-            </div>
-            {days.map((d, dayIdx) => {
-              const date = new Date(weekStart);
-              date.setDate(weekStart.getDate() + dayIdx);
-              const dateStr = date.toISOString().split("T")[0];
-              const appts = appointments.filter(a => a.date === dateStr && parseInt(a.time.split(":")[0]) === 8 + hourIdx);
-              return (
-                <div key={`${hourIdx}-${dayIdx}`} className="min-h-[60px] rounded-xl bg-muted/20 hover:bg-muted/40 transition-colors p-1">
-                  {appts.map(a => {
-                    const t = therapists.find(t => t.id === a.therapistId);
-                    return (
-                      <motion.div
-                        key={a.id}
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        whileHover={{ scale: 1.04 }}
-                        className="rounded-lg p-1.5 text-[10px] font-medium mb-1 cursor-pointer"
-                        style={{ background: `${t?.avatarColor}25`, borderLeft: `2px solid ${t?.avatarColor}` }}
-                      >
-                        <div className="text-foreground truncate">{a.patientName.split(" ")[0]}</div>
-                        <div className="text-muted-foreground truncate">{a.time}</div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MonthView() {
-  const today = new Date();
-  const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-
-  const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-  const lastDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
-  const startWeekday = firstDay.getDay();
-  const daysInMonth = lastDay.getDate();
-  const cells = Array.from({ length: 42 }).map((_, i) => {
-    const dayNum = i - startWeekday + 1;
-    if (dayNum < 1 || dayNum > daysInMonth) return null;
-    const d = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), dayNum);
-    return d;
+  const days = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date(startOfWeek);
+    d.setDate(d.getDate() + i);
+    return d.toISOString().split("T")[0];
   });
 
   return (
-    <div className="rounded-3xl bg-card p-4 md:p-6 premium-shadow ring-1 ring-border/40">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">
-          {currentMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-        </h3>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-muted/60 hover:bg-muted">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button onClick={() => setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1))}
-            className="rounded-xl bg-muted/60 px-3 py-2 text-xs font-medium hover:bg-muted">
-            Today
-          </button>
-          <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-muted/60 hover:bg-muted">
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
+    <div className="rounded-2xl bg-card ring-1 ring-border overflow-hidden">
+      <div className="flex items-center justify-between p-4 border-b border-border/60 flex-wrap gap-2">
+        <h3 className="text-sm font-semibold">Week of {formatDate(days[0])}</h3>
+        <Button variant="outline" size="sm" onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}>This Week</Button>
       </div>
-
-      <div className="grid grid-cols-7 gap-1.5">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => (
-          <div key={d} className="text-center text-[10px] uppercase tracking-wider text-muted-foreground font-semibold py-2">
-            {d}
-          </div>
-        ))}
-        {cells.map((d, i) => {
-          if (!d) return <div key={i} className="min-h-[80px] md:min-h-[100px] rounded-xl bg-muted/10" />;
-          const dateStr = d.toISOString().split("T")[0];
-          const appts = appointments.filter(a => a.date === dateStr);
-          const isToday = d.toDateString() === today.toDateString();
+      <div className="grid grid-cols-1 sm:grid-cols-7 divide-x divide-border/40">
+        {days.map((d, i) => {
+          const dayAppts = appointments.filter(a => a.date === d);
+          const isToday = d === new Date().toISOString().split("T")[0];
           return (
-            <motion.div
-              key={i}
-              whileHover={{ scale: 1.02 }}
-              className={cn(
-                "min-h-[80px] md:min-h-[100px] rounded-xl p-1.5 cursor-pointer transition-all",
-                isToday ? "bg-[#D6F04C]/15 ring-2 ring-[#D6F04C]/40" :
-                appts.length > 0 ? "bg-muted/40 hover:bg-muted/60" : "bg-muted/20 hover:bg-muted/40"
-              )}
-            >
+            <div key={d} className={cn("p-3 min-h-[200px] sm:min-h-[400px]", i === 0 && "border-t border-border/40 sm:border-t-0")}>
               <div className={cn(
-                "text-xs font-semibold mb-1",
+                "text-xs font-semibold mb-2 pb-2 border-b border-border/40",
                 isToday && "text-[#8FA61E]"
-              )}>{d.getDate()}</div>
-              <div className="space-y-0.5">
-                {appts.slice(0, 3).map(a => {
-                  const t = therapists.find(t => t.id === a.therapistId);
-                  return (
-                    <div key={a.id} className="rounded-md px-1.5 py-0.5 text-[10px] truncate font-medium"
-                      style={{ background: `${t?.avatarColor}25`, color: "#1a1a1a" }}>
-                      {a.time} {a.patientName.split(" ")[0]}
-                    </div>
-                  );
-                })}
-                {appts.length > 3 && (
-                  <div className="text-[10px] text-muted-foreground font-medium px-1">+{appts.length - 3} more</div>
-                )}
+              )}>
+                {new Date(d).toLocaleDateString("en-IN", { weekday: "short", day: "numeric" })}
               </div>
-            </motion.div>
+              <div className="space-y-1.5">
+                {dayAppts.map(a => (
+                  <div
+                    key={a.id}
+                    onClick={() => onOpenPatient(a.patientId)}
+                    className="cursor-pointer rounded-lg bg-muted/60 hover:bg-muted p-2 text-[10px] transition-all"
+                  >
+                    <div className="font-semibold text-foreground text-xs">{a.time}</div>
+                    <div className="truncate text-muted-foreground">{a.patientName}</div>
+                  </div>
+                ))}
+                {dayAppts.length === 0 && <div className="text-[10px] text-muted-foreground/40">—</div>}
+              </div>
+            </div>
           );
         })}
       </div>

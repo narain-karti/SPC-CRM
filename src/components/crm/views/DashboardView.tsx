@@ -18,16 +18,20 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadialBarChart, RadialBar
 } from "recharts";
 import { useAppStore } from "@/lib/store";
+import { PhysioDashboardView } from "./PhysioDashboardView";
 
 export function DashboardView() {
   const { setView, openPatient, currentRole } = useAppStore();
   const isPhysio = currentRole === "physiotherapist";
   const isReception = currentRole === "receptionist";
 
+  // Show dedicated physio dashboard for physiotherapists
+  if (isPhysio) {
+    return <PhysioDashboardView />;
+  }
+
   // Role-specific KPIs
-  const visibleKpis = isPhysio
-    ? kpiData.filter(k => ["Today's Patients", "Appointments", "Active Treatments", "Follow-ups Due", "Consultations", "Patients Waiting"].includes(k.label))
-    : isReception
+  const visibleKpis = isReception
     ? kpiData.filter(k => ["Today's Patients", "Appointments", "Patients Waiting", "Consultations", "Pending Bills", "Lead Conversion"].includes(k.label))
     : kpiData;
 

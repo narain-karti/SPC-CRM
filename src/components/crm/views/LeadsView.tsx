@@ -1,17 +1,22 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
-  Zap, Plus, MoreHorizontal, Clock, IndianRupee, Phone, Mail,
-  MessageCircle, Calendar, TrendingUp, Target, ArrowUpRight
+  Zap, Plus, MoreHorizontal, Phone, Mail,
+  MessageCircle, Calendar, Target, Trash2, FileText, FileSpreadsheet, Download, ChevronDown, UserPlus
 } from "lucide-react";
-import { leads, branches } from "@/lib/data";
+import { branches } from "@/lib/data";
+import { useAppStore } from "@/lib/store";
 import { Avatar } from "../Avatar";
 import { SectionHeader } from "../SectionHeader";
 import { AnimatedCounter } from "../AnimatedCounter";
-import { cn } from "@/lib/utils";
-import type { LeadStage } from "@/lib/types";
+import { Button } from "../Form";
+import { LeadModal } from "../modals/LeadModal";
+import { cn, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF, uid } from "@/lib/utils";
+import * as Popover from "@radix-ui/react-popover";
+import { toast } from "sonner";
+import type { LeadStage, Lead } from "@/lib/types";
 
 const stageConfig: Record<LeadStage, { label: string; color: string; bg: string; chip: string }> = {
   new: { label: "New", color: "#60A5FA", bg: "bg-blue-500/10", chip: "text-blue-600" },
@@ -33,164 +38,285 @@ const sourceIcons: Record<string, React.ReactNode> = {
 };
 
 export function LeadsView() {
-  const [leadsState, setLeadsState] = useState(leads);
+  const { leads, updateLead, deleteLead, addPatient, addNotification, currentBranchId } = useAppStore();
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+
+  const filteredLeads = useMemo(() => {
+    if (currentBranchId === "all") return leads;
+    return leads.filter(l => l.branchId === currentBranchId);
+  }, [leads, currentBranchId]);
 
   function onDragStart(id: string) { setDraggedId(id); }
   function onDrop(stage: LeadStage) {
     if (!draggedId) return;
-    setLeadsState(prev => prev.map(l => l.id === draggedId ? { ...l, stage } : l));
+    const lead = leads.find(l => l.id === draggedId);
+    if (!lead) return;
+    updateLead(draggedId, { stage });
+    if (stage === "converted") {
+      addNotification({
+        id: uid("n"),
+        type: "registration",
+        title: "Lead converted!",
+        message: `${lead.name} converted to patient`,
+        time: "Just now",
+        read: false,
+        priority: "high",
+      });
+      toast.success(`${lead.name} converted!`, {
+        description: "Optionally create a patient record",
+      });
+    } else {
+      toast.success(`Lead moved to ${stageConfig[stage].label}`);
+    }
     setDraggedId(null);
   }
 
-  const totalValue = leadsState.reduce((s, l) => s + l.value, 0);
-  const converted = leadsState.filter(l => l.stage === "converted").length;
-  const conversionRate = ((converted / leadsState.length) * 100).toFixed(0);
+  function convertToPatient(lead: Lead) {
+    const patientId = uid("pt");
+    addPatient({
+      id: patientId,
+      patientId: `SPC-${String(2024000 + Math.floor(Math.random() * 9999))}`,
+      name: lead.name,
+      age: 30,
+      gender: "Male",
+      dob: "1995-01-01",
+      phone: lead.phone,
+      email: lead.email || `${lead.name.toLowerCase().replace(/\s/g, ".")}@email.com`,
+      address: branches.find(b => b.id === lead.branchId)?.name || "Chennai",
+      emergencyContact: lead.phone,
+      branchId: lead.branchId,
+      bloodGroup: "O+",
+      allergies: ["None"],
+      conditions: [lead.interest],
+      previousTreatments: [],
+      currentTreatment: "Initial Assessment",
+      status: "in_consultation",
+      therapistId: "th1",
+      tags: ["Converted Lead"],
+      avatarColor: lead.avatarColor,
+      registeredOn: new Date().toISOString().split("T")[0],
+      lastVisit: new Date().toISOString().split("T")[0],
+      progress: 0,
+      totalSessions: 8,
+      completedSessions: 0,
+      balance: 0,
+    });
+    updateLead(lead.id, { stage: "converted" });
+    toast.success(`${lead.name} converted to patient!`);
+  }
+
+  const totalValue = filteredLeads.reduce((s, l) => s + l.value, 0);
+  const convertedCount = filteredLeads.filter(l => l.stage === "converted").length;
+  const conversionRate = filteredLeads.length > 0 ? ((convertedCount / filteredLeads.length) * 100).toFixed(0) : "0";
+
+  function handleExportCSV() {
+    const rows = filteredLeads.map(l => ({
+      name: l.name, phone: l.phone, email: l.email,
+      source: l.source, stage: l.stage,
+      branch: branches.find(b => b.id === l.branchId)?.name || "",
+      interest: l.interest, value: l.value,
+      createdAt: l.createdAt, notes: l.notes,
+    }));
+    exportToCSV(`leads_${Date.now()}.csv`, rows);
+    toast.success("CSV exported");
+    setShowExport(false);
+  }
+  function handleExportExcel() {
+    const rows = filteredLeads.map(l => ({
+      name: l.name, phone: l.phone, email: l.email,
+      source: l.source, stage: l.stage,
+      branch: branches.find(b => b.id === l.branchId)?.name || "",
+      interest: l.interest, value: l.value, createdAt: l.createdAt,
+    }));
+    exportToExcel({
+      filename: `leads_${Date.now()}.xls`,
+      sheetName: "Leads",
+      columns: [
+        { key: "name", label: "Name" },
+        { key: "phone", label: "Phone" },
+        { key: "email", label: "Email" },
+        { key: "source", label: "Source" },
+        { key: "stage", label: "Stage" },
+        { key: "branch", label: "Branch" },
+        { key: "interest", label: "Interest" },
+        { key: "value", label: "Value" },
+        { key: "createdAt", label: "Created" },
+      ],
+      rows,
+    });
+    toast.success("Excel exported");
+    setShowExport(false);
+  }
+  function handleExportPDF() {
+    const rows = filteredLeads.map(l => ({
+      name: l.name,
+      phone: l.phone,
+      source: l.source,
+      stage: l.stage,
+      branch: branches.find(b => b.id === l.branchId)?.name || "",
+      interest: l.interest,
+      value: l.value,
+    }));
+    exportToHTMLPDF({
+      filename: `leads_${Date.now()}.html`,
+      title: "Leads Pipeline",
+      subtitle: `${filteredLeads.length} leads · ${conversionRate}% conversion`,
+      meta: [
+        { label: "Total Leads", value: String(filteredLeads.length) },
+        { label: "Pipeline Value", value: formatINR(totalValue) },
+        { label: "Converted", value: String(convertedCount) },
+        { label: "Conversion Rate", value: `${conversionRate}%` },
+      ],
+      columns: [
+        { key: "name", label: "Name" },
+        { key: "phone", label: "Phone" },
+        { key: "source", label: "Source" },
+        { key: "stage", label: "Stage" },
+        { key: "branch", label: "Branch" },
+        { key: "interest", label: "Interest" },
+        { key: "value", label: "Value", align: "right" },
+      ],
+      rows,
+      summary: [
+        { label: "Total Leads", value: String(filteredLeads.length), accent: "lime" },
+        { label: "Pipeline Value", value: formatINR(totalValue), accent: "purple" },
+        { label: "Converted", value: String(convertedCount), accent: "emerald" },
+        { label: "Conversion Rate", value: `${conversionRate}%`, accent: "blue" },
+      ],
+    });
+    toast.success("PDF opened");
+    setShowExport(false);
+  }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 md:space-y-6">
       <SectionHeader
-        title="Lead Pipeline"
-        description="Drag & drop leads between stages"
+        title="Leads Pipeline"
+        description={`${filteredLeads.length} leads · ${formatINR(totalValue)} pipeline value · ${conversionRate}% conversion`}
         icon={<Zap className="h-5 w-5" />}
         action={
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            className="flex h-10 items-center gap-2 rounded-2xl bg-gradient-to-br from-[#D6F04C] to-[#A3C128] px-4 text-sm font-semibold text-[#0F1117] shadow-[0_8px_24px_-6px_rgba(214,240,76,0.5)]"
-          >
-            <Plus className="h-4 w-4" strokeWidth={2.5} /> Add Lead
-          </motion.button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Popover.Root open={showExport} onOpenChange={setShowExport}>
+              <Popover.Trigger asChild>
+                <Button variant="outline" size="default">
+                  <Download className="h-4 w-4" /> Export
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content align="end" sideOffset={8} className="z-50 w-56 rounded-2xl bg-popover p-2 premium-shadow-lg ring-1 ring-border">
+                  <button onClick={handleExportCSV} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm hover:bg-muted">
+                    <FileText className="h-4 w-4 text-emerald-500" /> CSV
+                  </button>
+                  <button onClick={handleExportExcel} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm hover:bg-muted">
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Excel
+                  </button>
+                  <button onClick={handleExportPDF} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm hover:bg-muted">
+                    <FileText className="h-4 w-4 text-rose-500" /> PDF
+                  </button>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+            <Button variant="lime" onClick={() => setShowModal(true)}>
+              <Plus className="h-4 w-4" /> New Lead
+            </Button>
+          </div>
         }
       />
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { label: "Total Leads", value: leadsState.length, icon: Zap, color: "#D6F04C" },
-          { label: "Pipeline Value", value: totalValue, prefix: "₹", icon: IndianRupee, color: "#34D399" },
-          { label: "Converted", value: converted, icon: Target, color: "#B79AFB" },
-          { label: "Conversion Rate", value: conversionRate, suffix: "%", icon: TrendingUp, color: "#FBBF24" },
-        ].map((s, i) => {
-          const Icon = s.icon;
-          return (
-            <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-              className="rounded-3xl bg-card p-4 premium-shadow ring-1 ring-border/40">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ background: `${s.color}15`, color: s.color }}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{s.label}</div>
-                  <div className="text-xl font-semibold tabular-nums">
-                    {s.prefix && <span>{s.prefix}</span>}
-                    <AnimatedCounter value={Number(s.value)} />
-                    {s.suffix && <span>{s.suffix}</span>}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* Kanban board */}
+      {/* Kanban Board */}
       <div className="overflow-x-auto scrollbar-premium pb-2">
-        <div className="flex gap-4 min-w-[1100px]">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3 min-w-[800px] sm:min-w-0">
           {stageOrder.map(stage => {
-            const stageLeads = leadsState.filter(l => l.stage === stage);
-            const cfg = stageConfig[stage];
+            const stageLeads = filteredLeads.filter(l => l.stage === stage);
             const stageValue = stageLeads.reduce((s, l) => s + l.value, 0);
+            const config = stageConfig[stage];
             return (
               <div
                 key={stage}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => onDrop(stage)}
-                className="flex-1 min-w-[220px]"
+                className="rounded-2xl bg-muted/30 ring-1 ring-border p-3 min-h-[200px]"
               >
-                <div className="rounded-3xl bg-muted/30 p-3 ring-1 ring-border/40">
-                  <div className="mb-3 flex items-center justify-between px-1">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full" style={{ background: cfg.color }} />
-                      <span className="text-sm font-semibold">{cfg.label}</span>
-                      <span className="rounded-full bg-muted px-1.5 py-0 text-[10px] font-bold text-muted-foreground">{stageLeads.length}</span>
-                    </div>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: config.color }} />
+                    <span className="text-xs font-semibold">{config.label}</span>
+                    <span className="text-[10px] text-muted-foreground">({stageLeads.length})</span>
                   </div>
-                  <div className="text-[11px] text-muted-foreground mb-3 px-1">₹{stageValue.toLocaleString("en-IN")} total</div>
-
-                  <div className="space-y-2 min-h-[200px]">
-                    <AnimatePresence>
-                      {stageLeads.map((lead, i) => {
-                        const branch = branches.find(b => b.id === lead.branchId);
-                        return (
-                          <motion.div
-                            key={lead.id}
-                            layout
-                            draggable
-                            onDragStart={() => onDragStart(lead.id)}
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.9 }}
-                            transition={{ delay: i * 0.04 }}
-                            whileHover={{ y: -2, scale: 1.02 }}
-                            whileDrag={{ scale: 1.05, rotate: 2 }}
-                            className="group cursor-grab active:cursor-grabbing rounded-2xl bg-card p-3 premium-shadow ring-1 ring-border/40 hover:ring-border"
-                          >
-                            <div className="flex items-start gap-2">
-                              <Avatar name={lead.name} color={lead.avatarColor} size="sm" />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium truncate">{lead.name}</div>
-                                <div className="text-[11px] text-muted-foreground truncate">{lead.interest}</div>
-                              </div>
-                              <button className="opacity-0 group-hover:opacity-100 transition-opacity flex h-6 w-6 items-center justify-center rounded-lg hover:bg-muted">
-                                <MoreHorizontal className="h-3.5 w-3.5" />
+                </div>
+                <div className="text-[10px] text-muted-foreground px-1 mb-2">{formatINR(stageValue)}</div>
+                <div className="space-y-2">
+                  <AnimatePresence>
+                    {stageLeads.map((lead, i) => (
+                      <motion.div
+                        key={lead.id}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        transition={{ delay: i * 0.04 }}
+                        draggable
+                        onDragStart={() => onDragStart(lead.id)}
+                        className="group rounded-xl bg-card p-3 ring-1 ring-border hover:ring-foreground/20 cursor-grab active:cursor-grabbing"
+                      >
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <Avatar name={lead.name} color={lead.avatarColor} size="sm" />
+                          <Popover.Root>
+                            <Popover.Trigger asChild>
+                              <button className="opacity-0 group-hover:opacity-100 h-6 w-6 flex items-center justify-center rounded-md hover:bg-muted">
+                                <MoreHorizontal className="h-3 w-3" />
                               </button>
-                            </div>
-
-                            <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
-                              <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ background: `${cfg.color}15`, color: cfg.color }}>
-                                {sourceIcons[lead.source]} {lead.source.replace("_", " ")}
-                              </span>
-                              <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                <span className="h-1.5 w-1.5 rounded-full" style={{ background: branch?.color }} />
-                                {branch?.name}
-                              </span>
-                            </div>
-
-                            <div className="mt-2.5 flex items-center justify-between border-t border-border/60 pt-2">
-                              <span className="text-sm font-semibold tabular-nums">₹{lead.value.toLocaleString("en-IN")}</span>
-                              <div className="flex items-center gap-1">
-                                <button className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted">
-                                  <Phone className="h-3 w-3" />
+                            </Popover.Trigger>
+                            <Popover.Portal>
+                              <Popover.Content align="end" sideOffset={4} className="z-50 w-44 rounded-xl bg-popover p-1.5 premium-shadow-lg ring-1 ring-border">
+                                {stage !== "converted" && (
+                                  <button
+                                    onClick={() => convertToPatient(lead)}
+                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-muted"
+                                  >
+                                    <UserPlus className="h-3.5 w-3.5" /> Convert to Patient
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => { deleteLead(lead.id); toast.success("Lead deleted"); }}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-rose-500/10 text-rose-500"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" /> Delete
                                 </button>
-                                <button className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted">
-                                  <MessageCircle className="h-3 w-3 text-[#34D399]" />
-                                </button>
-                                <button className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted">
-                                  <ArrowUpRight className="h-3 w-3" />
-                                </button>
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </AnimatePresence>
-
-                    {stageLeads.length === 0 && (
-                      <div className="flex flex-col items-center justify-center py-8 text-center">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border-2 border-dashed border-border">
-                          <Plus className="h-4 w-4 text-muted-foreground/50" />
+                              </Popover.Content>
+                            </Popover.Portal>
+                          </Popover.Root>
                         </div>
-                        <p className="mt-2 text-[11px] text-muted-foreground">Drop leads here</p>
-                      </div>
-                    )}
-                  </div>
+                        <div className="text-sm font-semibold text-foreground mb-0.5">{lead.name}</div>
+                        <div className="text-[11px] text-muted-foreground mb-2 truncate">{lead.interest}</div>
+                        <div className="flex items-center justify-between">
+                          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                            {sourceIcons[lead.source]}
+                            {lead.source.replace("_", " ")}
+                          </span>
+                          <span className="text-xs font-bold" style={{ color: config.color }}>{formatINR(lead.value)}</span>
+                        </div>
+                        {lead.notes && (
+                          <p className="mt-2 pt-2 border-t border-border/40 text-[10px] text-muted-foreground line-clamp-2 italic">"{lead.notes}"</p>
+                        )}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                  {stageLeads.length === 0 && (
+                    <div className="text-center text-[11px] text-muted-foreground/40 py-6 border-2 border-dashed border-border/40 rounded-xl">
+                      Drop leads here
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
       </div>
+
+      <LeadModal open={showModal} onOpenChange={setShowModal} />
     </div>
   );
 }

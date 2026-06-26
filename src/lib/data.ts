@@ -3,12 +3,13 @@ import type {
   AttendanceRecord, NotificationItem, TimelineEvent, MedicalRecord, KPIData
 } from "./types";
 
+// Chennai branches for Stability Physio Care
 export const branches: Branch[] = [
-  { id: "br1", name: "Indiranagar", location: "100 Feet Road", city: "Bengaluru", phone: "+91 80 2345 6789", revenue: 1845000, patients: 342, staff: 18, growth: 24, color: "#D6F04C" },
-  { id: "br2", name: "Koramangala", location: "5th Block", city: "Bengaluru", phone: "+91 80 2456 7890", revenue: 1428000, patients: 287, staff: 14, growth: 18, color: "#B79AFB" },
-  { id: "br3", name: "Whitefield", location: "ITPL Main Road", city: "Bengaluru", phone: "+91 80 2567 8901", revenue: 986000, patients: 198, staff: 11, growth: 32, color: "#5EEAD4" },
-  { id: "br4", name: "HSR Layout", location: "Sector 2", city: "Bengaluru", phone: "+91 80 2678 9012", revenue: 1240000, patients: 241, staff: 13, growth: 15, color: "#FBBF24" },
-  { id: "br5", name: "Jayanagar", location: "4th Block", city: "Bengaluru", phone: "+91 80 2789 0123", revenue: 762000, patients: 156, staff: 9, growth: 9, color: "#F472B6" },
+  { id: "br1", name: "Kodambakkam", location: "Arcot Road", city: "Chennai", phone: "+91 44 4567 8901", revenue: 1845000, patients: 342, staff: 18, growth: 24, color: "#D6F04C" },
+  { id: "br2", name: "Pallikaranai", location: "Velachery Main Road", city: "Chennai", phone: "+91 44 4678 9012", revenue: 1428000, patients: 287, staff: 14, growth: 18, color: "#B79AFB" },
+  { id: "br3", name: "Sholinganallur", location: "OMR", city: "Chennai", phone: "+91 44 4789 0123", revenue: 986000, patients: 198, staff: 11, growth: 32, color: "#5EEAD4" },
+  { id: "br4", name: "Nerkundram", location: "Poonamallee High Road", city: "Chennai", phone: "+91 44 4890 1234", revenue: 1240000, patients: 241, staff: 13, growth: 15, color: "#FBBF24" },
+  { id: "br5", name: "Ponneri", location: "Chennai Tirupati Highway", city: "Chennai", phone: "+91 44 4901 2345", revenue: 762000, patients: 156, staff: 9, growth: 9, color: "#F472B6" },
 ];
 
 const avatarColors = ["#D6F04C", "#B79AFB", "#5EEAD4", "#FBBF24", "#F472B6", "#60A5FA", "#34D399", "#FB923C", "#A78BFA", "#2DD4BF"];
@@ -39,7 +40,7 @@ export const patients: Patient[] = Array.from({ length: 48 }).map((_, i) => {
     dob: `${1965 + rand(i, 40)}-${String(1 + rand(i + 2, 12)).padStart(2, "0")}-${String(1 + rand(i + 9, 28)).padStart(2, "0")}`,
     phone: `+91 ${String(98000 + rand(i, 19999))} ${String(10000 + rand(i * 3, 89999))}`,
     email: `${name.toLowerCase().replace(/\s/g, ".")}@email.com`,
-    address: `${10 + rand(i, 200)}, ${pick(["2nd Cross", "4th Main", "Park Road", "Temple Street", "MG Road"], i)}, ${pick(branches, i).name}`,
+    address: `${10 + rand(i, 200)}, ${pick(["2nd Cross", "4th Main", "Park Road", "Temple Street", "MG Road"], i)}, ${pick(branches, i).name}, Chennai`,
     emergencyContact: `+91 ${String(99000 + rand(i, 999))} ${String(10000 + rand(i * 7, 89999))}`,
     branchId,
     bloodGroup: pick(bloodGroups, i + 2),
@@ -184,15 +185,15 @@ export const notifications: NotificationItem[] = [
   { id: "n1", type: "appointment", title: "New appointment booked", message: "Arjun Sharma booked a consultation at 4:30 PM with Dr. Ananya", time: "2 min ago", read: false, priority: "high" },
   { id: "n2", type: "payment", title: "Payment received", message: "₹4,500 UPI payment from Priya Reddy for INV-2026-1003", time: "12 min ago", read: false, priority: "high" },
   { id: "n3", type: "follow_up", title: "Follow-up due", message: "Rohan Nair's 6-week follow-up is due tomorrow", time: "1 hour ago", read: false, priority: "medium" },
-  { id: "n4", type: "registration", title: "New patient registered", message: "Ananya Iyer registered at Indiranagar branch", time: "2 hours ago", read: true, priority: "low" },
-  { id: "n5", type: "attendance", title: "Late check-in", message: "Deepak Sharma checked in 45 min late at Koramangala", time: "3 hours ago", read: true, priority: "medium" },
+  { id: "n4", type: "registration", title: "New patient registered", message: "Ananya Iyer registered at Kodambakkam branch", time: "2 hours ago", read: true, priority: "low" },
+  { id: "n5", type: "attendance", title: "Late check-in", message: "Deepak Sharma checked in 45 min late at Pallikaranai", time: "3 hours ago", read: true, priority: "medium" },
   { id: "n6", type: "report", title: "MRI report uploaded", message: "Dr. Vikram uploaded an MRI report for Karthik Reddy", time: "5 hours ago", read: true, priority: "low" },
   { id: "n7", type: "leave", title: "Leave request", message: "Sunita Rao requested leave for 28 Jun - 30 Jun", time: "Yesterday", read: true, priority: "medium" },
   { id: "n8", type: "appointment", title: "Appointment cancelled", message: "Sneha Patel cancelled her 11 AM session", time: "Yesterday", read: true, priority: "medium" },
 ];
 
 export const timelineEvents: TimelineEvent[] = [
-  { id: "t1", type: "registration", title: "Patient Registered", description: "Registered at Indiranagar branch with cervical spondylosis complaint", date: "2026-04-15 10:30 AM", actor: "Lakshmi Iyer" },
+  { id: "t1", type: "registration", title: "Patient Registered", description: "Registered at Kodambakkam branch with cervical spondylosis complaint", date: "2026-04-15 10:30 AM", actor: "Lakshmi Iyer" },
   { id: "t2", type: "consultation", title: "Initial Consultation", description: "Assessed by Dr. Ananya Krishnan. Recommended 12-session manual therapy plan", date: "2026-04-15 11:45 AM", actor: "Dr. Ananya Krishnan" },
   { id: "t3", type: "report", title: "X-Ray Uploaded", description: "Cervical spine X-Ray uploaded by reception", date: "2026-04-16 09:15 AM", actor: "Lakshmi Iyer" },
   { id: "t4", type: "prescription", title: "Digital Prescription Issued", description: "Prescribed NSAIDs + 12 sessions of cervical traction & manual therapy", date: "2026-04-16 11:00 AM", actor: "Dr. Ananya Krishnan" },
@@ -292,4 +293,14 @@ export const revenueForecastData = [
   { name: "Oct", actual: 0, forecast: 1528000 },
   { name: "Nov", actual: 0, forecast: 1610000 },
   { name: "Dec", actual: 0, forecast: 1742000 },
+];
+
+// Treatment packages offered by the clinic
+export const treatmentPackages = [
+  { id: "pkg1", name: "Single Consultation", sessions: 1, price: 800, duration: "45 min", description: "Initial assessment + consultation" },
+  { id: "pkg2", name: "Therapy Session", sessions: 1, price: 1200, duration: "60 min", description: "Single physiotherapy session" },
+  { id: "pkg3", name: "Recovery Pack (8 sessions)", sessions: 8, price: 8800, duration: "8 weeks", description: "Standard treatment plan" },
+  { id: "pkg4", name: "Premium Rehab (12 sessions)", sessions: 12, price: 14400, duration: "12 weeks", description: "Comprehensive rehab program" },
+  { id: "pkg5", name: "Sports Performance (16 sessions)", sessions: 16, price: 22400, duration: "8 weeks", description: "Athlete-focused intensive program" },
+  { id: "pkg6", name: "Post-Op Rehab (20 sessions)", sessions: 20, price: 28000, duration: "16 weeks", description: "Surgical recovery program" },
 ];

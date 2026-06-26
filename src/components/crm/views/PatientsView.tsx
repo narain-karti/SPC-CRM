@@ -3,22 +3,31 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useMemo } from "react";
 import {
-  Search, Filter, Plus, Download, MoreHorizontal, ChevronDown,
-  Users, Phone, Mail, Calendar, ArrowUpDown, CheckSquare, Square,
-  X, Stethoscope, TrendingUp, ArrowUpRight, Tag, Crown, Sparkles, Zap, Activity
+  Search, Plus, Download, MoreHorizontal, ChevronDown,
+  Users, Phone, Mail, Calendar, ArrowUpDown,
+  X, Stethoscope, Tag, Zap, Trash2, Eye, FileSpreadsheet, FileText,
+  Filter, UserPlus, ChevronLeft, ChevronRight, Crown
 } from "lucide-react";
-import { patients, branches, therapists } from "@/lib/data";
+import { branches, therapists } from "@/lib/data";
 import { useAppStore } from "@/lib/store";
 import { Avatar } from "../Avatar";
 import { StatusBadge } from "../StatusBadge";
 import { SectionHeader } from "../SectionHeader";
-import { cn } from "@/lib/utils";
+import { Modal } from "../Modal";
+import { Field, TextInput, TextArea, SelectInput, Button } from "../Form";
+import { PatientRegistrationModal } from "../modals/PatientRegistrationModal";
+import { cn, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF } from "@/lib/utils";
 import * as Popover from "@radix-ui/react-popover";
+import type { Patient } from "@/lib/types";
+import { toast } from "sonner";
 
 type SortKey = "name" | "patientId" | "age" | "registeredOn" | "balance" | "progress";
 
 export function PatientsView() {
-  const { openPatient, currentBranchId, setView } = useAppStore();
+  const {
+    patients, openPatient, currentBranchId, setView,
+    deletePatient, addNotification,
+  } = useAppStore();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
@@ -27,6 +36,9 @@ export function PatientsView() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const pageSize = 10;
 
   const filtered = useMemo(() => {
@@ -52,7 +64,7 @@ export function PatientsView() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [search, statusFilter, tagFilter, branchFilter, sortKey, sortDir]);
+  }, [patients, search, statusFilter, tagFilter, branchFilter, sortKey, sortDir]);
 
   const paged = filtered.slice(page * pageSize, (page + 1) * pageSize);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -87,6 +99,22 @@ export function PatientsView() {
     }
   }
 
+  function handleBulkDelete() {
+    if (selected.size === 0) return;
+    selected.forEach(id => deletePatient(id));
+    toast.success(`${selected.size} patient(s) deleted`);
+    addNotification({
+      id: `n_${Date.now()}`,
+      type: "registration",
+      title: "Patients deleted",
+      message: `${selected.size} patient records were removed`,
+      time: "Just now",
+      read: false,
+      priority: "medium",
+    });
+    setSelected(new Set());
+  }
+
   const statusOptions = [
     { value: "all", label: "All Status" },
     { value: "active", label: "Active" },
@@ -98,343 +126,408 @@ export function PatientsView() {
 
   const tagOptions = ["VIP", "Post-Surgery", "Sports", "Regular"];
 
+  function handleExportCSV() {
+    const rows = filtered.map(p => ({
+      patientId: p.patientId,
+      name: p.name,
+      age: p.age,
+      gender: p.gender,
+      phone: p.phone,
+      email: p.email,
+      branch: branches.find(b => b.id === p.branchId)?.name || "",
+      status: p.status,
+      conditions: p.conditions.join("; "),
+      balance: p.balance,
+      progress: p.progress,
+      registeredOn: p.registeredOn,
+    }));
+    exportToCSV(`patients_${Date.now()}.csv`, rows);
+    toast.success("CSV exported & downloaded");
+    setShowExport(false);
+  }
+
+  function handleExportExcel() {
+    const rows = filtered.map(p => ({
+      patientId: p.patientId,
+      name: p.name,
+      age: p.age,
+      gender: p.gender,
+      phone: p.phone,
+      email: p.email,
+      branch: branches.find(b => b.id === p.branchId)?.name || "",
+      status: p.status,
+      conditions: p.conditions.join("; "),
+      balance: p.balance,
+      progress: p.progress,
+      registeredOn: p.registeredOn,
+    }));
+    exportToExcel({
+      filename: `patients_${Date.now()}.xls`,
+      sheetName: "Patients",
+      columns: [
+        { key: "patientId", label: "Patient ID" },
+        { key: "name", label: "Name" },
+        { key: "age", label: "Age" },
+        { key: "gender", label: "Gender" },
+        { key: "phone", label: "Phone" },
+        { key: "email", label: "Email" },
+        { key: "branch", label: "Branch" },
+        { key: "status", label: "Status" },
+        { key: "conditions", label: "Conditions" },
+        { key: "balance", label: "Balance" },
+        { key: "progress", label: "Progress %" },
+        { key: "registeredOn", label: "Registered On" },
+      ],
+      rows,
+    });
+    toast.success("Excel exported & downloaded");
+    setShowExport(false);
+  }
+
+  function handleExportPDF() {
+    const rows = filtered.map(p => ({
+      patientId: p.patientId,
+      name: p.name,
+      age: String(p.age),
+      phone: p.phone,
+      branch: branches.find(b => b.id === p.branchId)?.name || "",
+      status: p.status,
+      balance: p.balance,
+    }));
+    exportToHTMLPDF({
+      filename: `patients_${Date.now()}.html`,
+      title: "Patient Directory",
+      subtitle: `${filtered.length} patient(s) listed`,
+      meta: [
+        { label: "Total Patients", value: String(filtered.length) },
+        { label: "Branch", value: currentBranchId === "all" ? "All Branches" : branches.find(b => b.id === currentBranchId)?.name || "—" },
+        { label: "Generated", value: new Date().toLocaleString("en-IN") },
+      ],
+      columns: [
+        { key: "patientId", label: "Patient ID" },
+        { key: "name", label: "Name" },
+        { key: "age", label: "Age", align: "center" },
+        { key: "phone", label: "Phone" },
+        { key: "branch", label: "Branch" },
+        { key: "status", label: "Status" },
+        { key: "balance", label: "Balance", align: "right" },
+      ],
+      rows,
+      summary: [
+        { label: "Total Patients", value: String(filtered.length), accent: "lime" },
+        { label: "Active", value: String(filtered.filter(p => p.status === "active").length), accent: "emerald" },
+        { label: "Total Outstanding", value: formatINR(filtered.reduce((s, p) => s + p.balance, 0)), accent: "rose" },
+        { label: "Avg Progress", value: `${Math.round(filtered.reduce((s, p) => s + p.progress, 0) / (filtered.length || 1))}%`, accent: "purple" },
+      ],
+    });
+    toast.success("PDF report opened — print/save as PDF");
+    setShowExport(false);
+  }
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 md:space-y-6">
       <SectionHeader
         title="Patients"
-        description={`${filtered.length} patients ${currentBranchId !== "all" ? "in this branch" : "across all branches"}`}
+        description={`${filtered.length} of ${patients.length} patient records`}
         icon={<Users className="h-5 w-5" />}
         action={
-          <div className="flex items-center gap-2">
-            <button className="flex h-10 items-center gap-2 rounded-2xl bg-card px-3.5 text-sm font-medium ring-1 ring-border/60 transition-all hover:bg-muted premium-shadow">
-              <Download className="h-4 w-4" /> <span className="hidden sm:block">Export</span>
-            </button>
-            <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
-              className="flex h-10 items-center gap-2 rounded-2xl bg-gradient-to-br from-[#D6F04C] to-[#A3C128] px-4 text-sm font-semibold text-[#0F1117] shadow-[0_8px_24px_-6px_rgba(214,240,76,0.5)]"
-            >
-              <Plus className="h-4 w-4" strokeWidth={2.5} /> New Patient
-            </motion.button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Popover.Root open={showExport} onOpenChange={setShowExport}>
+              <Popover.Trigger asChild>
+                <Button variant="outline" size="default">
+                  <Download className="h-4 w-4" /> Export
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content align="end" sideOffset={8} className="z-50 w-56 rounded-2xl bg-popover p-2 premium-shadow-lg ring-1 ring-border">
+                  <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Export Format</div>
+                  <button onClick={handleExportCSV} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm hover:bg-muted">
+                    <FileText className="h-4 w-4 text-emerald-500" /> CSV (auto-download)
+                  </button>
+                  <button onClick={handleExportExcel} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm hover:bg-muted">
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Excel (auto-download)
+                  </button>
+                  <button onClick={handleExportPDF} className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm hover:bg-muted">
+                    <FileText className="h-4 w-4 text-rose-500" /> PDF (print-ready)
+                  </button>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+            <Button variant="lime" onClick={() => setShowRegister(true)}>
+              <UserPlus className="h-4 w-4" /> Register Patient
+            </Button>
           </div>
         }
       />
 
       {/* Filter bar */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="rounded-3xl bg-card p-3 premium-shadow ring-1 ring-border/40"
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex h-10 flex-1 min-w-[220px] items-center gap-2.5 rounded-2xl bg-muted/60 px-3.5 ring-1 ring-border/60">
-            <Search className="h-4 w-4 text-muted-foreground" />
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[200px] max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(0); }}
-              placeholder="Search by name, ID, phone, email…"
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              placeholder="Search name, ID, phone…"
+              className="h-10 w-full rounded-xl bg-card pl-9 pr-3 text-sm ring-1 ring-border focus:ring-2 focus:ring-foreground/20 outline-none"
             />
             {search && (
-              <button onClick={() => setSearch("")} className="text-muted-foreground hover:text-foreground">
-                <X className="h-3.5 w-3.5" />
+              <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md hover:bg-muted">
+                <X className="h-3 w-3" />
               </button>
             )}
           </div>
-
-          <FilterSelect
-            label="Status"
-            value={statusFilter}
-            options={statusOptions}
-            onChange={(v) => { setStatusFilter(v); setPage(0); }}
-          />
-          <FilterSelect
-            label="Tag"
-            value={tagFilter}
-            options={[{ value: "all", label: "All Tags" }, ...tagOptions.map(t => ({ value: t, label: t }))]}
-            onChange={(v) => { setTagFilter(v); setPage(0); }}
-          />
-          <FilterSelect
-            label="Branch"
-            value={branchFilter}
-            options={[{ value: "all", label: "All Branches" }, ...branches.map(b => ({ value: b.id, label: b.name }))]}
-            onChange={(v) => { setBranchFilter(v); setPage(0); }}
-          />
-
+          <Button variant="outline" size="default" onClick={() => setShowFilters(f => !f)}>
+            <Filter className="h-4 w-4" /> Filters
+            {(statusFilter !== "all" || tagFilter !== "all" || branchFilter !== "all") && (
+              <span className="h-1.5 w-1.5 rounded-full bg-[#D6F04C]" />
+            )}
+          </Button>
           {selected.size > 0 && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="flex items-center gap-2 rounded-2xl bg-[#D6F04C]/15 px-3 py-2 ring-1 ring-[#D6F04C]/30"
-            >
-              <span className="text-xs font-medium text-[#8FA61E]">{selected.size} selected</span>
-              <div className="h-4 w-px bg-[#D6F04C]/30" />
-              <button className="text-xs font-medium text-[#8FA61E] hover:underline">Assign Tag</button>
-              <button className="text-xs font-medium text-rose-600 hover:underline">Archive</button>
-              <button onClick={() => setSelected(new Set())} className="text-muted-foreground hover:text-foreground">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </motion.div>
+            <Button variant="destructive" size="default" onClick={handleBulkDelete}>
+              <Trash2 className="h-4 w-4" /> Delete ({selected.size})
+            </Button>
           )}
         </div>
-      </motion.div>
 
-      {/* Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
-        className="overflow-hidden rounded-3xl bg-card premium-shadow ring-1 ring-border/40"
-      >
-        <div className="overflow-x-auto scrollbar-premium">
-          <table className="w-full min-w-[840px]">
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-card ring-1 ring-border">
+                <Field label="Status">
+                  <SelectInput
+                    value={statusFilter}
+                    onValueChange={(v) => { setStatusFilter(v); setPage(0); }}
+                    options={statusOptions}
+                  />
+                </Field>
+                <Field label="Tag">
+                  <SelectInput
+                    value={tagFilter}
+                    onValueChange={(v) => { setTagFilter(v); setPage(0); }}
+                    options={[{ value: "all", label: "All Tags" }, ...tagOptions.map(t => ({ value: t, label: t }))]}
+                  />
+                </Field>
+                <Field label="Branch">
+                  <SelectInput
+                    value={branchFilter}
+                    onValueChange={(v) => { setBranchFilter(v); setPage(0); }}
+                    options={[{ value: "all", label: "All Branches" }, ...branches.map(b => ({ value: b.id, label: b.name }))]}
+                  />
+                </Field>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Table — responsive: card view on mobile, table on desktop */}
+      <div className="rounded-2xl bg-card ring-1 ring-border overflow-hidden">
+        {/* Desktop table */}
+        <div className="hidden lg:block overflow-x-auto">
+          <table className="w-full">
             <thead>
               <tr className="border-b border-border/60 bg-muted/30">
-                <th className="w-10 px-4 py-3">
-                  <button onClick={toggleSelectAll} className="flex h-5 w-5 items-center justify-center rounded-md transition-colors hover:bg-muted">
-                    {allSelected || (someSelected && !allSelected) ? (
-                      <CheckSquare className={`h-4 w-4 ${allSelected ? "text-[#8FA61E]" : "text-muted-foreground"}`} />
-                    ) : (
-                      <Square className="h-4 w-4 text-muted-foreground/40" />
-                    )}
+                <th className="px-4 py-3 text-left w-10">
+                  <button onClick={toggleSelectAll} className="flex h-5 w-5 items-center justify-center rounded-md ring-1 ring-border hover:bg-muted">
+                    {allSelected && <span className="h-3 w-3 rounded-sm bg-[#D6F04C]" />}
+                    {!allSelected && someSelected && <span className="h-1.5 w-1.5 rounded-sm bg-muted-foreground" />}
                   </button>
                 </th>
-                <Th label="Patient" sortKey="name" currentSort={sortKey} sortDir={sortDir} onSort={() => toggleSort("name")} />
-                <Th label="Patient ID" sortKey="patientId" currentSort={sortKey} sortDir={sortDir} onSort={() => toggleSort("patientId")} />
+                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <button onClick={() => toggleSort("name")} className="flex items-center gap-1 hover:text-foreground">
+                    Patient <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <button onClick={() => toggleSort("patientId")} className="flex items-center gap-1 hover:text-foreground">
+                    ID <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
                 <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Contact</th>
-                <Th label="Age" sortKey="age" currentSort={sortKey} sortDir={sortDir} onSort={() => toggleSort("age")} />
+                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Branch</th>
                 <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Therapist</th>
-                <Th label="Progress" sortKey="progress" currentSort={sortKey} sortDir={sortDir} onSort={() => toggleSort("progress")} />
                 <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
-                <Th label="Balance" sortKey="balance" currentSort={sortKey} sortDir={sortDir} onSort={() => toggleSort("balance")} />
-                <th className="w-10 px-4 py-3"></th>
+                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <button onClick={() => toggleSort("progress")} className="flex items-center gap-1 hover:text-foreground">
+                    Progress <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <button onClick={() => toggleSort("balance")} className="flex items-center gap-1 hover:text-foreground ml-auto">
+                    Balance <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 w-10"></th>
               </tr>
             </thead>
             <tbody>
-              <AnimatePresence mode="popLayout">
-                {paged.map((p, i) => {
-                  const branch = branches.find(b => b.id === p.branchId);
-                  const therapist = therapists.find(t => t.id === p.therapistId);
-                  const isSelected = selected.has(p.id);
-                  return (
-                    <motion.tr
-                      key={p.id}
-                      layout
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      transition={{ delay: i * 0.025 }}
-                      onClick={() => openPatient(p.id)}
-                      className={cn(
-                        "group cursor-pointer border-b border-border/40 transition-colors",
-                        isSelected ? "bg-[#D6F04C]/[0.06]" : "hover:bg-muted/40"
+              {paged.map((p, i) => {
+                const branch = branches.find(b => b.id === p.branchId);
+                const therapist = therapists.find(t => t.id === p.therapistId);
+                return (
+                  <motion.tr
+                    key={p.id}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.02 }}
+                    onClick={() => openPatient(p.id)}
+                    className="border-b border-border/40 hover:bg-muted/30 cursor-pointer transition-colors group"
+                  >
+                    <td className="px-4 py-3" onClick={e => { e.stopPropagation(); toggleSelect(p.id); }}>
+                      <button className="flex h-5 w-5 items-center justify-center rounded-md ring-1 ring-border hover:bg-muted">
+                        {selected.has(p.id) && <span className="h-3 w-3 rounded-sm bg-[#D6F04C]" />}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar name={p.name} color={p.avatarColor} size="sm" />
+                        <div className="min-w-0">
+                          <div className="font-medium text-sm text-foreground truncate flex items-center gap-1.5">
+                            {p.name}
+                            {p.tags.includes("VIP") && <Crown className="h-3 w-3 text-amber-500" />}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{p.age}y · {p.gender}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-mono text-muted-foreground">{p.patientId}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-xs text-foreground">{p.phone}</div>
+                      <div className="text-[11px] text-muted-foreground truncate max-w-[160px]">{p.email}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-1.5 text-xs">
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: branch?.color }} />
+                        {branch?.name}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-xs text-foreground">{therapist?.name.replace("Dr. ", "Dr. ")}</span>
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge status={p.status} size="sm" /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-[#D6F04C] to-[#A3C128]"
+                            style={{ width: `${p.progress}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium text-muted-foreground">{p.progress}%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {p.balance > 0 ? (
+                        <span className="text-xs font-semibold text-rose-500">{formatINR(p.balance)}</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
-                    >
-                      <td className="px-4 py-3" onClick={(e) => { e.stopPropagation(); toggleSelect(p.id); }}>
-                        <button className="flex h-5 w-5 items-center justify-center rounded-md">
-                          {isSelected
-                            ? <CheckSquare className="h-4 w-4 text-[#8FA61E]" />
-                            : <Square className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground" />}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <Avatar name={p.name} color={p.avatarColor} size="md" />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-medium truncate">{p.name}</span>
-                              {p.tags.includes("VIP") && <Crown className="h-3 w-3 text-amber-500" />}
-                            </div>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className="h-1.5 w-1.5 rounded-full" style={{ background: branch?.color }} />
-                              <span className="text-[11px] text-muted-foreground">{branch?.name}</span>
-                              {p.tags.slice(0, 1).map(t => (
-                                <span key={t} className="rounded-full bg-muted px-1.5 py-0 text-[9px] font-medium text-muted-foreground">{t}</span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-muted-foreground">{p.patientId}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
-                          <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{p.phone.split(" ").slice(-2).join(" ")}</span>
-                          <span className="flex items-center gap-1 truncate max-w-[160px]"><Mail className="h-3 w-3" />{p.email}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-sm tabular-nums">{p.age}</span>
-                        <span className="ml-1 text-[11px] text-muted-foreground">{p.gender[0]}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <Avatar name={therapist?.name || ""} color={therapist?.avatarColor} size="xs" />
-                          <span className="text-xs truncate max-w-[120px]">{therapist?.name.replace("Dr. ", "")}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${p.progress}%` }}
-                              transition={{ duration: 0.8, delay: i * 0.04, ease: [0.22, 1, 0.36, 1] }}
-                              className={cn(
-                                "h-full rounded-full",
-                                p.progress >= 75 ? "bg-emerald-500" :
-                                p.progress >= 40 ? "bg-[#D6F04C]" :
-                                "bg-amber-500"
-                              )}
-                            />
-                          </div>
-                          <span className="text-[11px] font-medium tabular-nums">{p.progress}%</span>
-                        </div>
-                        <div className="text-[10px] text-muted-foreground mt-0.5">{p.completedSessions}/{p.totalSessions} sessions</div>
-                      </td>
-                      <td className="px-4 py-3"><StatusBadge status={p.status} size="sm" /></td>
-                      <td className="px-4 py-3">
-                        {p.balance > 0 ? (
-                          <span className="text-sm font-semibold text-rose-600 tabular-nums">₹{p.balance.toLocaleString("en-IN")}</span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); openPatient(p.id); }}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
-                        >
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                        </button>
-                      </td>
-                    </motion.tr>
-                  );
-                })}
-              </AnimatePresence>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={e => { e.stopPropagation(); openPatient(p.id); }}
+                        className="opacity-0 group-hover:opacity-100 h-7 w-7 flex items-center justify-center rounded-lg hover:bg-muted"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </motion.tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
 
+        {/* Mobile cards */}
+        <div className="lg:hidden divide-y divide-border/40">
+          {paged.map((p, i) => {
+            const branch = branches.find(b => b.id === p.branchId);
+            return (
+              <motion.button
+                key={p.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.02 }}
+                onClick={() => openPatient(p.id)}
+                className="w-full text-left p-4 hover:bg-muted/30"
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <Avatar name={p.name} color={p.avatarColor} size="md" />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm text-foreground flex items-center gap-1.5">
+                      <span className="truncate">{p.name}</span>
+                      {p.tags.includes("VIP") && <Crown className="h-3 w-3 text-amber-500 shrink-0" />}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{p.patientId} · {p.age}y · {p.gender}</div>
+                  </div>
+                  <StatusBadge status={p.status} size="sm" />
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <Phone className="h-3 w-3 text-muted-foreground" />
+                    <span className="truncate">{p.phone}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: branch?.color }} />
+                    <span>{branch?.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Progress:</span>
+                    <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-[#D6F04C] to-[#A3C128]" style={{ width: `${p.progress}%` }} />
+                    </div>
+                    <span className="font-medium">{p.progress}%</span>
+                  </div>
+                  {p.balance > 0 && (
+                    <div className="text-rose-500 font-semibold">{formatINR(p.balance)} due</div>
+                  )}
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+
         {paged.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16">
-            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-muted">
-              <Users className="h-7 w-7 text-muted-foreground" />
-            </div>
-            <h3 className="mt-4 text-sm font-semibold">No patients found</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Try adjusting your filters or search query</p>
+          <div className="py-16 text-center">
+            <Users className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" />
+            <p className="text-sm text-muted-foreground">No patients found</p>
+            <Button variant="lime" size="sm" className="mt-3" onClick={() => setShowRegister(true)}>
+              <Plus className="h-3.5 w-3.5" /> Register new patient
+            </Button>
           </div>
         )}
+      </div>
 
-        {/* Pagination */}
-        <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-4 py-3">
-          <div className="text-xs text-muted-foreground">
-            Showing <span className="font-semibold text-foreground">{page * pageSize + 1}</span>–
-            <span className="font-semibold text-foreground">{Math.min((page + 1) * pageSize, filtered.length)}</span> of{" "}
-            <span className="font-semibold text-foreground">{filtered.length}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPage(p => Math.max(0, p - 1))}
-              disabled={page === 0}
-              className="flex h-8 items-center gap-1 rounded-xl bg-card px-3 text-xs font-medium ring-1 ring-border/60 transition-all hover:bg-muted disabled:opacity-40 disabled:pointer-events-none"
-            >
-              Previous
-            </button>
-            {Array.from({ length: totalPages }).slice(0, 5).map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setPage(i)}
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-xl text-xs font-medium transition-all",
-                  page === i ? "bg-foreground text-background" : "bg-card ring-1 ring-border/60 hover:bg-muted"
-                )}
-              >
-                {i + 1}
-              </button>
-            ))}
-            <button
-              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
-              className="flex h-8 items-center gap-1 rounded-xl bg-card px-3 text-xs font-medium ring-1 ring-border/60 transition-all hover:bg-muted disabled:opacity-40 disabled:pointer-events-none"
-            >
-              Next
-            </button>
+      {/* Pagination */}
+      {filtered.length > pageSize && (
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <p className="text-xs text-muted-foreground">
+            Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, filtered.length)} of {filtered.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+              <ChevronLeft className="h-3.5 w-3.5" /> Prev
+            </Button>
+            <span className="text-xs text-muted-foreground px-2">
+              Page {page + 1} of {totalPages}
+            </span>
+            <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>
+              Next <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
           </div>
         </div>
-      </motion.div>
+      )}
+
+      <PatientRegistrationModal open={showRegister} onOpenChange={setShowRegister} />
     </div>
-  );
-}
-
-function Th({
-  label, sortKey, currentSort, sortDir, onSort,
-}: {
-  label: string;
-  sortKey?: SortKey;
-  currentSort?: SortKey;
-  sortDir?: "asc" | "desc";
-  onSort?: () => void;
-}) {
-  const isActive = sortKey && currentSort === sortKey;
-  return (
-    <th className="px-4 py-3 text-left">
-      <button
-        onClick={onSort}
-        className={cn(
-          "flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider transition-colors",
-          isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-        )}
-      >
-        {label}
-        <ArrowUpDown className={cn("h-3 w-3", isActive && "text-[#8FA61E]")} />
-        {isActive && <span className="text-[#8FA61E] text-[10px]">{sortDir === "asc" ? "↑" : "↓"}</span>}
-      </button>
-    </th>
-  );
-}
-
-function FilterSelect({
-  label, value, options, onChange,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const current = options.find(o => o.value === value);
-  return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button className="flex h-10 items-center gap-2 rounded-2xl bg-muted/60 px-3.5 text-xs font-medium ring-1 ring-border/60 transition-all hover:bg-muted hover:ring-border">
-          <span className="text-muted-foreground">{label}:</span>
-          <span className="text-foreground">{current?.label}</span>
-          <ChevronDown className={cn("h-3 w-3 text-muted-foreground transition-transform", open && "rotate-180")} />
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          sideOffset={8}
-          className="z-50 w-48 rounded-2xl bg-popover p-1.5 premium-shadow-lg ring-1 ring-border"
-        >
-          {options.map(o => (
-            <button
-              key={o.value}
-              onClick={() => { onChange(o.value); setOpen(false); }}
-              className={cn(
-                "flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-xs font-medium transition-colors",
-                value === o.value ? "bg-primary/5 text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              {o.label}
-              {value === o.value && <div className="h-1.5 w-1.5 rounded-full bg-[#D6F04C]" />}
-            </button>
-          ))}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
   );
 }

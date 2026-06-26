@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useAppStore } from "@/lib/store";
-import { Sidebar } from "@/components/crm/layout/Sidebar";
+import { Sidebar, MobileSidebar } from "@/components/crm/layout/Sidebar";
 import { Topbar } from "@/components/crm/layout/Topbar";
 import { PageTransition } from "@/components/crm/PageTransition";
 import { CommandPalette } from "@/components/crm/CommandPalette";
@@ -70,9 +70,10 @@ export default function Home() {
   return (
     <div className="flex h-screen overflow-hidden bg-background bg-mesh">
       <Sidebar />
-      <div className="flex flex-1 flex-col min-w-0">
+      <MobileSidebar />
+      <div className="flex flex-1 flex-col min-w-0 h-full">
         <Topbar />
-        <main className="flex-1 overflow-y-auto scrollbar-premium p-4 md:p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-premium p-3 sm:p-4 md:p-6 lg:p-8">
           <AnimatePresence mode="wait">
             <PageTransition key={currentView} viewKey={currentView}>
               {renderView()}

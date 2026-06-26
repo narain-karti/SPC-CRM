@@ -9,19 +9,26 @@ import {
   Pill, Image as ImageIcon, FileCheck2, MessageCircle, Edit, Share2,
   Video, CalendarPlus, Heart, Zap, ChevronRight, CheckCircle2, Star
 } from "lucide-react";
-import { patients, branches, therapists, timelineEvents, medicalRecords, invoices, appointments } from "@/lib/data";
+import { patients as seedPatients, branches, therapists, timelineEvents, medicalRecords } from "@/lib/data";
 import { useAppStore } from "@/lib/store";
 import { Avatar } from "../Avatar";
 import { StatusBadge } from "../StatusBadge";
 import { SectionHeader } from "../SectionHeader";
 import { AnimatedCounter } from "../AnimatedCounter";
-import { cn } from "@/lib/utils";
+import { Button } from "../Form";
+import { AppointmentModal } from "../modals/AppointmentModal";
+import { InvoiceModal } from "../modals/InvoiceModal";
+import { cn, formatINR, formatDate, exportToHTMLPDF } from "@/lib/utils";
+import { toast } from "sonner";
+import { useState as useLocalState } from "react";
 
 type Tab = "overview" | "timeline" | "records" | "treatment" | "billing" | "notes";
 
 export function PatientDetailView() {
-  const { selectedPatientId, setView, currentRole } = useAppStore();
+  const { selectedPatientId, setView, currentRole, patients, invoices, appointments } = useAppStore();
   const [tab, setTab] = useState<Tab>("overview");
+  const [showApptModal, setShowApptModal] = useLocalState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useLocalState(false);
 
   const patient = patients.find(p => p.id === selectedPatientId);
   if (!patient) {
@@ -111,22 +118,27 @@ export function PatientDetailView() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              <button className="flex h-10 items-center gap-2 rounded-2xl bg-card px-3.5 text-sm font-medium ring-1 ring-border/60 transition-all hover:bg-muted premium-shadow">
-                <Phone className="h-4 w-4" /> Call
-              </button>
-              <button className="flex h-10 items-center gap-2 rounded-2xl bg-card px-3.5 text-sm font-medium ring-1 ring-border/60 transition-all hover:bg-muted premium-shadow">
-                <MessageCircle className="h-4 w-4 text-[#34D399]" /> WhatsApp
-              </button>
-              <button className="flex h-10 items-center gap-2 rounded-2xl bg-card px-3.5 text-sm font-medium ring-1 ring-border/60 transition-all hover:bg-muted premium-shadow">
-                <Video className="h-4 w-4 text-[#B79AFB]" /> Video
-              </button>
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className="flex h-10 items-center gap-2 rounded-2xl bg-gradient-to-br from-[#D6F04C] to-[#A3C128] px-4 text-sm font-semibold text-[#0F1117] shadow-[0_8px_24px_-6px_rgba(214,240,76,0.5)]"
+              <Button
+                variant="outline"
+                onClick={() => { navigator.clipboard.writeText(patient.phone); toast.success("Phone copied"); }}
               >
+                <Phone className="h-4 w-4" /> Call
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => window.open(`https://wa.me/${patient.phone.replace(/[^\d]/g, "")}`, "_blank")}
+              >
+                <MessageCircle className="h-4 w-4 text-[#34D399]" /> WhatsApp
+              </Button>
+              <Button variant="outline" onClick={() => toast.info("Video call feature coming soon")}>
+                <Video className="h-4 w-4 text-[#B79AFB]" /> Video
+              </Button>
+              <Button variant="lime" onClick={() => setShowApptModal(true)}>
                 <CalendarPlus className="h-4 w-4" strokeWidth={2.5} /> Book Appointment
-              </motion.button>
+              </Button>
+              <Button variant="outline" onClick={() => handleExportPatientPDF()}>
+                <Download className="h-4 w-4" /> Export
+              </Button>
             </div>
           </div>
 
@@ -213,12 +225,61 @@ export function PatientDetailView() {
           {tab === "timeline" && <TimelineTab />}
           {tab === "records" && <RecordsTab patientId={patient.id} />}
           {tab === "treatment" && <TreatmentTab patient={patient} therapist={therapist} />}
-          {tab === "billing" && <BillingTab invoices={patientInvoices} />}
+          {tab === "billing" && (
+            <BillingTab
+              invoices={patientInvoices}
+              onCreateInvoice={() => setShowInvoiceModal(true)}
+            />
+          )}
           {tab === "notes" && <NotesTab />}
         </motion.div>
       </AnimatePresence>
+
+      <AppointmentModal open={showApptModal} onOpenChange={setShowApptModal} presetPatientId={patient.id} />
+      <InvoiceModal open={showInvoiceModal} onOpenChange={setShowInvoiceModal} presetPatientId={patient.id} />
     </div>
   );
+
+  function handleExportPatientPDF() {
+    const rows = [
+      { field: "Patient ID", value: patient.patientId },
+      { field: "Name", value: patient.name },
+      { field: "Age / Gender", value: `${patient.age}y / ${patient.gender}` },
+      { field: "Date of Birth", value: patient.dob },
+      { field: "Phone", value: patient.phone },
+      { field: "Email", value: patient.email },
+      { field: "Address", value: patient.address },
+      { field: "Emergency Contact", value: patient.emergencyContact },
+      { field: "Branch", value: branch?.name || "—" },
+      { field: "Blood Group", value: patient.bloodGroup },
+      { field: "Allergies", value: patient.allergies.join(", ") },
+      { field: "Conditions", value: patient.conditions.join(", ") },
+      { field: "Current Treatment", value: patient.currentTreatment },
+      { field: "Therapist", value: therapist?.name || "—" },
+      { field: "Progress", value: `${patient.progress}%` },
+      { field: "Sessions", value: `${patient.completedSessions}/${patient.totalSessions}` },
+      { field: "Outstanding Balance", value: formatINR(patient.balance) },
+      { field: "Registered On", value: patient.registeredOn },
+      { field: "Last Visit", value: patient.lastVisit },
+    ];
+    exportToHTMLPDF({
+      filename: `patient_${patient.patientId}_${Date.now()}.html`,
+      title: "Patient Profile",
+      subtitle: `${patient.name} · ${patient.patientId}`,
+      meta: [
+        { label: "Status", value: patient.status.replace("_", " ") },
+        { label: "Branch", value: branch?.name || "—" },
+        { label: "Therapist", value: therapist?.name || "—" },
+        { label: "Generated", value: new Date().toLocaleString("en-IN") },
+      ],
+      columns: [
+        { key: "field", label: "Field" },
+        { key: "value", label: "Value" },
+      ],
+      rows,
+    });
+    toast.success("Patient profile PDF opened");
+  }
 }
 
 function QuickStat({
@@ -608,11 +669,16 @@ function TreatmentTab({ patient, therapist }: any) {
   );
 }
 
-function BillingTab({ invoices }: { invoices: any[] }) {
+function BillingTab({ invoices, onCreateInvoice }: { invoices: any[]; onCreateInvoice?: () => void }) {
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-end">
+        <Button variant="lime" size="sm" onClick={onCreateInvoice}>
+          <Plus className="h-3.5 w-3.5" /> New Invoice
+        </Button>
+      </div>
       {invoices.length === 0 ? (
-        <div className="rounded-3xl bg-card p-12 text-center premium-shadow ring-1 ring-border/40">
+        <div className="rounded-3xl bg-card p-12 text-center ring-1 ring-border/40">
           <Receipt className="h-10 w-10 mx-auto text-muted-foreground/40" />
           <p className="mt-3 text-sm font-medium">No invoices yet</p>
           <p className="text-xs text-muted-foreground">Invoices for this patient will appear here</p>
@@ -625,7 +691,7 @@ function BillingTab({ invoices }: { invoices: any[] }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
             whileHover={{ y: -2 }}
-            className="rounded-2xl bg-card p-4 premium-shadow ring-1 ring-border/40 flex items-center gap-4 flex-wrap"
+            className="rounded-2xl bg-card p-4 ring-1 ring-border/40 flex items-center gap-4 flex-wrap"
           >
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/5">
               <Receipt className="h-5 w-5 text-foreground" />
@@ -640,14 +706,11 @@ function BillingTab({ invoices }: { invoices: any[] }) {
               </div>
             </div>
             <div className="text-right">
-              <div className="text-sm font-semibold tabular-nums">₹{inv.total.toLocaleString("en-IN")}</div>
+              <div className="text-sm font-semibold tabular-nums">{formatINR(inv.total)}</div>
               {inv.paid < inv.total && inv.status !== "refunded" && (
-                <div className="text-[11px] text-rose-600">Due ₹{(inv.total - inv.paid).toLocaleString("en-IN")}</div>
+                <div className="text-[11px] text-rose-600">Due {formatINR(inv.total - inv.paid)}</div>
               )}
             </div>
-            <button className="flex h-9 w-9 items-center justify-center rounded-xl bg-muted hover:bg-muted/70">
-              <Download className="h-4 w-4" />
-            </button>
           </motion.div>
         ))
       )}

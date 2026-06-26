@@ -17,9 +17,67 @@ import {
 import { ChartCard } from "../ChartCard";
 import { SectionHeader } from "../SectionHeader";
 import { AnimatedCounter } from "../AnimatedCounter";
-import { cn } from "@/lib/utils";
+import { Button } from "../Form";
+import { cn, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF } from "@/lib/utils";
+import { toast } from "sonner";
 
 export function ReportsView() {
+
+  function handleExportReport(name: string, fmt: "csv" | "excel" | "pdf") {
+    const rows = monthlyRevenueData.map(d => ({
+      month: d.name,
+      revenue: d.revenue,
+      expenses: d.expenses,
+      profit: d.revenue - d.expenses,
+      patients: d.patients,
+    }));
+    if (fmt === "csv") {
+      exportToCSV(`${name.toLowerCase().replace(/\s/g, "_")}_${Date.now()}.csv`, rows);
+      toast.success(`${name} CSV exported`);
+    } else if (fmt === "excel") {
+      exportToExcel({
+        filename: `${name.toLowerCase().replace(/\s/g, "_")}_${Date.now()}.xls`,
+        sheetName: name,
+        columns: [
+          { key: "month", label: "Month" },
+          { key: "revenue", label: "Revenue" },
+          { key: "expenses", label: "Expenses" },
+          { key: "profit", label: "Profit" },
+          { key: "patients", label: "Patients" },
+        ],
+        rows,
+      });
+      toast.success(`${name} Excel exported`);
+    } else {
+      exportToHTMLPDF({
+        filename: `${name.toLowerCase().replace(/\s/g, "_")}_${Date.now()}.html`,
+        title: name,
+        subtitle: "Monthly financial report",
+        meta: [
+          { label: "Period", value: "Jan - Jun 2026" },
+          { label: "Total Revenue", value: formatINR(rows.reduce((s, r) => s + r.revenue, 0)) },
+          { label: "Total Profit", value: formatINR(rows.reduce((s, r) => s + r.profit, 0)) },
+          { label: "Generated", value: new Date().toLocaleString("en-IN") },
+        ],
+        columns: [
+          { key: "month", label: "Month" },
+          { key: "revenue", label: "Revenue", align: "right" },
+          { key: "expenses", label: "Expenses", align: "right" },
+          { key: "profit", label: "Profit", align: "right" },
+          { key: "patients", label: "Patients", align: "center" },
+        ],
+        rows,
+        summary: [
+          { label: "Total Revenue", value: formatINR(rows.reduce((s, r) => s + r.revenue, 0)), accent: "lime" },
+          { label: "Total Expenses", value: formatINR(rows.reduce((s, r) => s + r.expenses, 0)), accent: "rose" },
+          { label: "Net Profit", value: formatINR(rows.reduce((s, r) => s + r.profit, 0)), accent: "emerald" },
+          { label: "Total Patients", value: String(rows.reduce((s, r) => s + r.patients, 0)), accent: "purple" },
+        ],
+      });
+      toast.success(`${name} PDF opened`);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <SectionHeader
@@ -27,16 +85,16 @@ export function ReportsView() {
         description="Generate and download reports across all branches"
         icon={<BarChart3 className="h-5 w-5" />}
         action={
-          <div className="flex items-center gap-2">
-            <button className="flex h-10 items-center gap-2 rounded-2xl bg-card px-3.5 text-sm font-medium ring-1 ring-border/60 hover:bg-muted premium-shadow">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => handleExportReport("Monthly Report", "pdf")}>
               <FileText className="h-4 w-4" /> PDF
-            </button>
-            <button className="flex h-10 items-center gap-2 rounded-2xl bg-card px-3.5 text-sm font-medium ring-1 ring-border/60 hover:bg-muted premium-shadow">
+            </Button>
+            <Button variant="outline" onClick={() => handleExportReport("Monthly Report", "excel")}>
               <FileSpreadsheet className="h-4 w-4" /> Excel
-            </button>
-            <button className="flex h-10 items-center gap-2 rounded-2xl bg-card px-3.5 text-sm font-medium ring-1 ring-border/60 hover:bg-muted premium-shadow">
+            </Button>
+            <Button variant="outline" onClick={() => handleExportReport("Monthly Report", "csv")}>
               <Download className="h-4 w-4" /> CSV
-            </button>
+            </Button>
           </div>
         }
       />
@@ -178,14 +236,14 @@ export function ReportsView() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Quick Reports" description="Generate & download" delay={0.35}>
+        <ChartCard title="Quick Reports" description="Click to download PDF" delay={0.35}>
           <div className="space-y-2">
             {[
-              { name: "Monthly Revenue Report", icon: IndianRupee, color: "#34D399" },
-              { name: "Patient Census Report", icon: Users, color: "#B79AFB" },
-              { name: "Therapist Performance", icon: Stethoscope, color: "#D6F04C" },
-              { name: "Branch Comparison", icon: Building2, color: "#60A5FA" },
-              { name: "Appointment Analytics", icon: Calendar, color: "#FBBF24" },
+              { name: "Monthly Revenue Report", icon: IndianRupee, color: "#34D399", key: "revenue" },
+              { name: "Patient Census Report", icon: Users, color: "#B79AFB", key: "patients" },
+              { name: "Therapist Performance", icon: Stethoscope, color: "#D6F04C", key: "therapists" },
+              { name: "Branch Comparison", icon: Building2, color: "#60A5FA", key: "branches" },
+              { name: "Appointment Analytics", icon: Calendar, color: "#FBBF24", key: "appointments" },
             ].map((r, i) => {
               const Icon = r.icon;
               return (
@@ -195,6 +253,7 @@ export function ReportsView() {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.4 + i * 0.05 }}
                   whileHover={{ x: 4 }}
+                  onClick={() => handleExportReport(r.name, "pdf")}
                   className="group flex w-full items-center gap-3 rounded-2xl bg-muted/40 p-2.5 ring-1 ring-border/40 hover:bg-muted transition-colors text-left"
                 >
                   <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: `${r.color}15`, color: r.color }}>

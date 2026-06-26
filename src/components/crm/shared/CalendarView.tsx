@@ -3,17 +3,20 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Calendar as CalIcon, Plus, Clock } from "lucide-react";
-import { appointments, therapists, patients } from "@/lib/data";
+import { therapists, patients } from "@/lib/data";
 import { SectionHeader } from "../SectionHeader";
+import { Button } from "../Form";
 import { Avatar } from "../Avatar";
+import { AppointmentModal } from "../modals/AppointmentModal";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 
 export function CalendarView() {
-  const { openPatient } = useAppStore();
+  const { openPatient, appointments, currentBranchId } = useAppStore();
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState<string | null>(today.toISOString().split("T")[0]);
+  const [showModal, setShowModal] = useState(false);
 
   const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
   const lastDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
@@ -25,7 +28,10 @@ export function CalendarView() {
     return new Date(currentMonth.getFullYear(), currentMonth.getMonth(), dayNum);
   });
 
-  const selectedAppts = selectedDate ? appointments.filter(a => a.date === selectedDate) : [];
+  const filteredAppts = currentBranchId === "all"
+    ? appointments
+    : appointments.filter(a => a.branchId === currentBranchId);
+  const selectedAppts = selectedDate ? filteredAppts.filter(a => a.date === selectedDate) : [];
 
   return (
     <div className="space-y-5">
@@ -34,13 +40,9 @@ export function CalendarView() {
         description="Schedule and manage all appointments"
         icon={<CalIcon className="h-5 w-5" />}
         action={
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            className="flex h-10 items-center gap-2 rounded-2xl bg-gradient-to-br from-[#D6F04C] to-[#A3C128] px-4 text-sm font-semibold text-[#0F1117] shadow-[0_8px_24px_-6px_rgba(214,240,76,0.5)]"
-          >
-            <Plus className="h-4 w-4" strokeWidth={2.5} /> New Event
-          </motion.button>
+          <Button variant="lime" onClick={() => setShowModal(true)}>
+            <Plus className="h-4 w-4" /> New Appointment
+          </Button>
         }
       />
 
@@ -76,7 +78,7 @@ export function CalendarView() {
             {cells.map((d, i) => {
               if (!d) return <div key={i} className="min-h-[72px] md:min-h-[92px] rounded-xl bg-muted/10" />;
               const dateStr = d.toISOString().split("T")[0];
-              const appts = appointments.filter(a => a.date === dateStr);
+              const appts = filteredAppts.filter(a => a.date === dateStr);
               const isToday = d.toDateString() === today.toDateString();
               const isSelected = dateStr === selectedDate;
               return (
@@ -171,6 +173,8 @@ export function CalendarView() {
           </div>
         </div>
       </div>
+
+      <AppointmentModal open={showModal} onOpenChange={setShowModal} />
     </div>
   );
 }

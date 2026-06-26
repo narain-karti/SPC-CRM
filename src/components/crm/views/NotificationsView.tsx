@@ -4,12 +4,12 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import {
   Bell, Calendar, IndianRupee, Clock, UserPlus, FileText,
-  AlertTriangle, CheckCircle2, X, Filter, Check, ChevronDown
+  AlertTriangle, CheckCircle2, X, Check
 } from "lucide-react";
-import { notifications } from "@/lib/data";
+import { useAppStore } from "@/lib/store";
 import { SectionHeader } from "../SectionHeader";
+import { Button } from "../Form";
 import { cn } from "@/lib/utils";
-import * as Popover from "@radix-ui/react-popover";
 
 const typeConfig: Record<string, { icon: React.ComponentType<{ className?: string }>; color: string; bg: string }> = {
   appointment: { icon: Calendar, color: "#60A5FA", bg: "bg-blue-500/10" },
@@ -22,18 +22,11 @@ const typeConfig: Record<string, { icon: React.ComponentType<{ className?: strin
 };
 
 export function NotificationsView() {
-  const [items, setItems] = useState(notifications);
+  const { notifications, markNotificationRead, markAllNotificationsRead } = useAppStore();
   const [filter, setFilter] = useState("all");
 
-  const filtered = items.filter(n => filter === "all" || (filter === "unread" && !n.read) || n.type === filter);
-  const unreadCount = items.filter(n => !n.read).length;
-
-  function markAllRead() {
-    setItems(prev => prev.map(n => ({ ...n, read: true })));
-  }
-  function markRead(id: string) {
-    setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-  }
+  const filtered = notifications.filter(n => filter === "all" || (filter === "unread" && !n.read) || n.type === filter);
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
     <div className="space-y-5">
@@ -42,13 +35,12 @@ export function NotificationsView() {
         description={`${unreadCount} unread notifications`}
         icon={<Bell className="h-5 w-5" />}
         action={
-          <button onClick={markAllRead} className="flex h-10 items-center gap-2 rounded-2xl bg-card px-3.5 text-sm font-medium ring-1 ring-border/60 hover:bg-muted premium-shadow">
+          <Button variant="outline" onClick={markAllNotificationsRead} disabled={unreadCount === 0}>
             <Check className="h-4 w-4" /> Mark all read
-          </button>
+          </Button>
         }
       />
 
-      {/* Filter chips */}
       <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
         {["all", "unread", "appointment", "payment", "follow_up", "registration", "attendance", "report", "leave"].map(f => (
           <button
@@ -56,7 +48,7 @@ export function NotificationsView() {
             onClick={() => setFilter(f)}
             className={cn(
               "rounded-xl px-3 py-2 text-xs font-medium transition-all whitespace-nowrap",
-              filter === f ? "bg-foreground text-background" : "bg-card text-muted-foreground hover:bg-muted ring-1 ring-border/60 premium-shadow"
+              filter === f ? "bg-foreground text-background" : "bg-card text-muted-foreground hover:bg-muted ring-1 ring-border/60"
             )}
           >
             {f === "all" ? "All" : f === "unread" ? "Unread" : f.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
@@ -64,7 +56,7 @@ export function NotificationsView() {
         ))}
       </div>
 
-      <div className="rounded-3xl bg-card premium-shadow ring-1 ring-border/40 overflow-hidden">
+      <div className="rounded-3xl bg-card ring-1 ring-border/40 overflow-hidden">
         <div className="divide-y divide-border/40">
           {filtered.map((n, i) => {
             const cfg = typeConfig[n.type] || typeConfig.report;
@@ -81,13 +73,13 @@ export function NotificationsView() {
                   "group flex items-start gap-3 p-4 cursor-pointer transition-colors",
                   n.read ? "hover:bg-muted/40" : "bg-[#D6F04C]/[0.04] hover:bg-[#D6F04C]/[0.08]"
                 )}
-                onClick={() => markRead(n.id)}
+                onClick={() => !n.read && markNotificationRead(n.id)}
               >
                 <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl", cfg.bg)} style={{ color: cfg.color }}>
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className={cn("text-sm font-medium", !n.read && "font-semibold")}>{n.title}</span>
                     {!n.read && <span className="h-1.5 w-1.5 rounded-full bg-[#D6F04C]" />}
                     {n.priority === "high" && (
@@ -97,9 +89,6 @@ export function NotificationsView() {
                   <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">{n.message}</p>
                   <div className="mt-1 text-[11px] text-muted-foreground/70">{n.time}</div>
                 </div>
-                <button className="opacity-0 group-hover:opacity-100 transition-opacity flex h-7 w-7 items-center justify-center rounded-lg hover:bg-muted">
-                  <X className="h-3.5 w-3.5" />
-                </button>
               </motion.div>
             );
           })}
@@ -118,3 +107,4 @@ export function NotificationsView() {
     </div>
   );
 }
+
