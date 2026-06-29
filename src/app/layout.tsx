@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   keywords: ["physiotherapy", "clinic CRM", "healthcare SaaS", "Stability Physio Care"],
   authors: [{ name: "Stability Physio Care" }],
   icons: {
-    icon: "/logo.svg",
+    icon: "/logo.png",
   },
 };
 
