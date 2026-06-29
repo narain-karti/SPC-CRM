@@ -7,13 +7,17 @@ import {
   Check, Stethoscope, UserCog, Menu, X
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { useBranches, useNotifications } from "@/hooks/use-supabase-query";
+import { useBranches, useNotifications, useRoleCredentials } from "@/hooks/use-supabase-query";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Avatar } from "../Avatar";
 import * as Popover from "@radix-ui/react-popover";
 import type { Role } from "@/lib/types";
 import { roleUser } from "./Sidebar";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
 
 const roleOptions: { value: Role; label: string; icon: React.ComponentType<{ className?: string }>; color: string }[] = [
   { value: "master_admin", label: "Master Admin", icon: UserCog, color: "#D6F04C" },
@@ -30,9 +34,42 @@ export function Topbar() {
   } = useAppStore();
   const { data: branches = [] } = useBranches();
   const { data: notifications = [] } = useNotifications();
+  const { data: roleCredentials = [] } = useRoleCredentials();
+  
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [targetRole, setTargetRole] = useState<Role | null>(null);
+  const [passwordInput, setPasswordInput] = useState("");
+
+  const handleRoleSwitch = (newRole: Role) => {
+    setRoleMenuOpen(false);
+    if (newRole === currentRole) return;
+    
+    // Master Admin can switch to any role without password
+    if (currentRole === "master_admin") {
+      setRole(newRole);
+      toast.success(`Switched to ${roleOptions.find(r => r.value === newRole)?.label}`);
+    } else {
+      setTargetRole(newRole);
+      setPasswordInput("");
+      setAuthDialogOpen(true);
+    }
+  };
+
+  const confirmRoleSwitch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const roleConfig = roleCredentials.find(r => r.role === targetRole);
+    if (targetRole && roleConfig && passwordInput === roleConfig.password) {
+      setRole(targetRole);
+      setAuthDialogOpen(false);
+      toast.success(`Switched to ${roleOptions.find(r => r.value === targetRole)?.label}`);
+    } else {
+      toast.error("Incorrect password");
+    }
+  };
 
   const user = roleUser[currentRole];
   const currentRoleOpt = roleOptions.find(r => r.value === currentRole)!;
@@ -147,7 +184,7 @@ export function Topbar() {
                 return (
                   <button
                     key={opt.value}
-                    onClick={() => { setRole(opt.value); setRoleMenuOpen(false); }}
+                    onClick={() => handleRoleSwitch(opt.value)}
                     className={cn(
                       "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm transition-colors",
                       isActive ? "bg-primary/5 text-foreground" : "hover:bg-muted"
@@ -258,6 +295,36 @@ export function Topbar() {
           </Popover.Portal>
         </Popover.Root>
       </div>
+
+      <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={confirmRoleSwitch}>
+            <DialogHeader>
+              <DialogTitle>Enter Password</DialogTitle>
+              <DialogDescription>
+                Please enter the password for {targetRole ? roleOptions.find(r => r.value === targetRole)?.label : "this role"} to switch.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex items-center space-x-2 py-4">
+              <Input
+                type="password"
+                placeholder="Password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <DialogFooter className="sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setAuthDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                Switch Role
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

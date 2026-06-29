@@ -22,6 +22,20 @@ export function useCurrentUser() {
 }
 
 // ============================================================
+// Role Credentials
+// ============================================================
+export function useRoleCredentials() {
+  return useQuery({
+    queryKey: ["roleCredentials"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("role_credentials").select("role, password");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+// ============================================================
 // Patients
 // ============================================================
 export function usePatients(branchId?: string) {

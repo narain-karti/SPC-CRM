@@ -12,6 +12,7 @@ import {
 import { revenueForecastData } from "@/lib/data"; // Forecast is still static for demo
 import { useAnalytics } from "@/hooks/use-analytics";
 import { useAppStore } from "@/lib/store";
+import { useBranches, useTherapists } from "@/hooks/use-supabase-query";
 import { ChartCard } from "../ChartCard";
 import { SectionHeader } from "../SectionHeader";
 import { AnimatedCounter } from "../AnimatedCounter";
@@ -29,6 +30,8 @@ export function AnalyticsView() {
     patientGrowthData,
     kpis
   } = useAnalytics(currentBranchId);
+  const { data: branches = [] } = useBranches();
+  const { data: therapists = [] } = useTherapists(currentBranchId);
 
   return (
     <div className="space-y-5">
@@ -150,7 +153,7 @@ export function AnalyticsView() {
               <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }} />
               <Scatter data={branchComparisonData}>
                 {branchComparisonData.map((entry, i) => (
-                  <Cell key={i} fill={branches[i].color} />
+                  <Cell key={i} fill={branches[i]?.color || "#D6F04C"} />
                 ))}
               </Scatter>
             </ScatterChart>
