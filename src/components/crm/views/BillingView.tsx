@@ -15,12 +15,19 @@ import { SectionHeader } from "../SectionHeader";
 import { AnimatedCounter } from "../AnimatedCounter";
 import { Button } from "../Form";
 import { InvoiceModal } from "../modals/InvoiceModal";
-import { cn, formatINR, formatDate, exportToCSV, exportToExcel, exportToHTMLPDF } from "@/lib/utils";
+import { cn, formatINR, formatDate, exportToCSV, exportToExcel, exportToHTMLPDF, mapInvoice } from "@/lib/utils";
+import { useInvoices, useUpdateInvoice, useDeleteInvoice } from "@/hooks/use-supabase-query";
 import * as Popover from "@radix-ui/react-popover";
 import { toast } from "sonner";
 
 export function BillingView() {
-  const { invoices, deleteInvoice, updateInvoice, addNotification, currentBranchId } = useAppStore();
+  const { addNotification, currentBranchId } = useAppStore();
+  const { data: rawInvoices = [], isLoading } = useInvoices(currentBranchId);
+  const updateInvoiceMutation = useUpdateInvoice();
+  const deleteInvoiceMutation = useDeleteInvoice();
+
+  const invoices = useMemo(() => rawInvoices.map(mapInvoice), [rawInvoices]);
+  
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [view, setView] = useState<"invoices" | "packages">("invoices");
@@ -44,7 +51,7 @@ export function BillingView() {
   function handleMarkPaid(id: string) {
     const inv = invoices.find(i => i.id === id);
     if (!inv) return;
-    updateInvoice(id, { status: "paid", paid: inv.total });
+    updateInvoiceMutation.mutate({ id, updates: { status: "paid", paid: inv.total } });
     addNotification({
       id: `n_${Date.now()}`,
       type: "payment",
@@ -60,7 +67,7 @@ export function BillingView() {
   function handleRefund(id: string) {
     const inv = invoices.find(i => i.id === id);
     if (!inv) return;
-    updateInvoice(id, { status: "refunded" });
+    updateInvoiceMutation.mutate({ id, updates: { status: "refunded" } });
     addNotification({
       id: `n_${Date.now()}`,
       type: "payment",
@@ -74,8 +81,7 @@ export function BillingView() {
   }
 
   function handleDelete(id: string) {
-    deleteInvoice(id);
-    toast.success("Invoice deleted");
+    deleteInvoiceMutation.mutate(id);
   }
 
   function handleExportCSV() {
@@ -326,13 +332,77 @@ export function BillingView() {
                     </motion.tr>
                   );
                 })}
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center">
+                      <div className="flex flex-col items-center">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#D6F04C] border-t-transparent" />
+                        <p className="mt-4 text-sm text-muted-foreground">Loading invoices...</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((inv, i) => {
+                    const branch = branches.find(b => b.id === inv.branchId);
+                    return (
+                      <motion.tr
+                        key={inv.id}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.02 }}
+                        className="border-b border-border/40 hover:bg-muted/30 group"
+                      >
+                        <td className="px-4 py-3 font-mono text-xs text-foreground">{inv.invoiceNo}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <Avatar name={inv.patientName} color="#D6F04C" size="xs" />
+                            <span className="text-sm font-medium">{inv.patientName}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1.5 text-xs">
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ background: branch?.color }} />
+                            {branch?.name}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(inv.date)}</td>
+                        <td className="px-4 py-3 text-right text-sm font-semibold">{formatINR(inv.total)}</td>
+                        <td className="px-4 py-3 text-right text-sm">
+                          {inv.total - inv.paid > 0 ? (
+                            <span className="text-rose-500 font-semibold">{formatINR(inv.total - inv.paid)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3"><StatusBadge status={inv.status} size="sm" /></td>
+                        <td className="px-4 py-3">
+                          <PaymentIcon method={inv.paymentMethod} />
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <InvoiceActions
+                            invoice={inv}
+                            onMarkPaid={() => markPaidMutation.mutate(inv.id)}
+                            onRefund={() => refundMutation.mutate(inv.id)}
+                            onDelete={() => deleteMutation.mutate(inv.id)}
+                            onPrint={() => printInvoice(inv)}
+                          />
+                        </td>
+                      </motion.tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-3">
-            {filtered.map((inv, i) => {
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#D6F04C] border-t-transparent" />
+                <p className="mt-4 text-sm">Loading invoices...</p>
+              </div>
+            ) : filtered.map((inv, i) => {
               const branch = branches.find(b => b.id === inv.branchId);
               return (
                 <motion.div

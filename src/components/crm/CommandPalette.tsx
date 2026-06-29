@@ -52,11 +52,16 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
 
   // Patient search results
   const patientResults: CommandItem[] = query.length >= 1
-    ? patients.filter(p =>
-        p.name.toLowerCase().includes(query.toLowerCase()) ||
-        p.patientId.toLowerCase().includes(query.toLowerCase()) ||
-        p.phone.includes(query)
-      ).slice(0, 5).map(p => ({
+    ? patients.filter(p => {
+        const qDigits = query.replace(/\D/g, '');
+        const phoneDigits = p.phone.replace(/\D/g, '');
+        const phoneMatch = qDigits.length > 0 && phoneDigits.includes(qDigits);
+        
+        return p.name.toLowerCase().includes(query.toLowerCase()) ||
+               p.patientId.toLowerCase().includes(query.toLowerCase()) ||
+               p.phone.toLowerCase().includes(query.toLowerCase()) ||
+               phoneMatch;
+      }).slice(0, 5).map(p => ({
         id: `pt-${p.id}`,
         label: p.name,
         description: `${p.patientId} · ${p.phone}`,

@@ -13,12 +13,18 @@ import { StatusBadge } from "../StatusBadge";
 import { SectionHeader } from "../SectionHeader";
 import { Button } from "../Form";
 import { EmployeeModal } from "../modals/EmployeeModal";
-import { cn, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF } from "@/lib/utils";
+import { cn, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF, mapTherapist } from "@/lib/utils";
+import { useTherapists, useDeleteTherapist } from "@/hooks/use-supabase-query";
 import * as Popover from "@radix-ui/react-popover";
 import { toast } from "sonner";
 
 export function TherapistsView() {
-  const { therapists, deleteTherapist, currentBranchId, setView } = useAppStore();
+  const { currentBranchId, setView } = useAppStore();
+  const { data: rawTherapists = [], isLoading } = useTherapists(currentBranchId);
+  const deleteTherapistMutation = useDeleteTherapist();
+
+  const therapists = useMemo(() => rawTherapists.map(mapTherapist), [rawTherapists]);
+
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -41,13 +47,13 @@ export function TherapistsView() {
       name: t.name,
       specialization: t.specialization,
       branch: branches.find(b => b.id === t.branchId)?.name || "",
-      patients: t.patients,
+      patients: t.patientsCount,
       rating: t.rating,
       experience: t.experience,
       sessionsToday: t.sessionsToday,
       revenue: t.revenue,
       status: t.status,
-      certifications: t.certifications.join("; "),
+      certifications: (t.certifications || []).join("; "),
     }));
     exportToCSV(`therapists_${Date.now()}.csv`, rows);
     toast.success("CSV exported");
@@ -58,7 +64,7 @@ export function TherapistsView() {
       name: t.name,
       specialization: t.specialization,
       branch: branches.find(b => b.id === t.branchId)?.name || "",
-      patients: t.patients,
+      patients: t.patientsCount,
       rating: t.rating,
       experience: t.experience,
       revenue: t.revenue,
@@ -87,7 +93,7 @@ export function TherapistsView() {
       name: t.name,
       specialization: t.specialization,
       branch: branches.find(b => b.id === t.branchId)?.name || "",
-      patients: String(t.patients),
+      patients: String(t.patientsCount),
       rating: String(t.rating),
       revenue: t.revenue,
     }));
@@ -203,7 +209,7 @@ export function TherapistsView() {
                         <Eye className="h-3.5 w-3.5" /> View Schedule
                       </button>
                       <button
-                        onClick={() => { deleteTherapist(t.id); toast.success("Therapist removed"); }}
+                        onClick={() => deleteTherapistMutation.mutate(t.id)}
                         className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-rose-500/10 text-rose-500"
                       >
                         <Trash2 className="h-3.5 w-3.5" /> Remove
@@ -221,7 +227,7 @@ export function TherapistsView() {
               </div>
               <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border/40">
                 <div className="text-center">
-                  <div className="text-base font-bold">{t.patients}</div>
+                  <div className="text-base font-bold">{t.patientsCount}</div>
                   <div className="text-[10px] text-muted-foreground">Patients</div>
                 </div>
                 <div className="text-center">
@@ -234,7 +240,7 @@ export function TherapistsView() {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-1">
-                {t.certifications.map(c => (
+                {(t.certifications || []).map((c: string) => (
                   <span key={c} className="inline-flex items-center gap-1 rounded-full bg-[#D6F04C]/10 px-2 py-0.5 text-[10px] font-medium text-[#8FA61E]">
                     <Award className="h-2.5 w-2.5" /> {c}
                   </span>
@@ -243,7 +249,12 @@ export function TherapistsView() {
             </motion.div>
           );
         })}
-        {filtered.length === 0 && (
+        {isLoading ? (
+          <div className="col-span-full flex flex-col items-center justify-center py-16 text-muted-foreground">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#D6F04C] border-t-transparent" />
+            <p className="mt-4 text-sm">Loading therapists...</p>
+          </div>
+        ) : filtered.length === 0 && (
           <div className="col-span-full py-16 text-center">
             <Stethoscope className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" />
             <p className="text-sm text-muted-foreground">No therapists found</p>

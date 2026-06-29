@@ -10,13 +10,14 @@ import {
 } from "lucide-react";
 import { branches, therapists } from "@/lib/data";
 import { useAppStore } from "@/lib/store";
+import { usePatients, useDeletePatient } from "@/hooks/use-supabase-query";
 import { Avatar } from "../Avatar";
 import { StatusBadge } from "../StatusBadge";
 import { SectionHeader } from "../SectionHeader";
 import { Modal } from "../Modal";
 import { Field, TextInput, TextArea, SelectInput, Button } from "../Form";
 import { PatientRegistrationModal } from "../modals/PatientRegistrationModal";
-import { cn, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF } from "@/lib/utils";
+import { cn, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF, mapPatient } from "@/lib/utils";
 import * as Popover from "@radix-ui/react-popover";
 import type { Patient } from "@/lib/types";
 import { toast } from "sonner";
@@ -25,9 +26,16 @@ type SortKey = "name" | "patientId" | "age" | "registeredOn" | "balance" | "prog
 
 export function PatientsView() {
   const {
-    patients, openPatient, currentBranchId, setView,
-    deletePatient, addNotification,
+    openPatient, currentBranchId, setView,
+    addNotification,
   } = useAppStore();
+  const { data: patientsData = [], isLoading: isLoadingPatients } = usePatients(currentBranchId);
+  const deletePatientMutation = useDeletePatient();
+
+  // Map supabase patients to UI format
+  const patients = useMemo(() => {
+    return patientsData.map(mapPatient) as Patient[];
+  }, [patientsData]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
@@ -45,8 +53,12 @@ export function PatientsView() {
     let list = patients.filter(p => {
       if (search) {
         const q = search.toLowerCase();
+        const qDigits = q.replace(/\D/g, '');
+        const phoneDigits = p.phone.replace(/\D/g, '');
+        const phoneMatch = qDigits.length > 0 && phoneDigits.includes(qDigits);
+        
         if (!p.name.toLowerCase().includes(q) && !p.patientId.toLowerCase().includes(q) &&
-            !p.phone.includes(q) && !p.email.toLowerCase().includes(q)) return false;
+            !p.email.toLowerCase().includes(q) && !p.phone.toLowerCase().includes(q) && !phoneMatch) return false;
       }
       if (statusFilter !== "all" && p.status !== statusFilter) return false;
       if (tagFilter !== "all" && !p.tags.includes(tagFilter)) return false;
@@ -101,7 +113,7 @@ export function PatientsView() {
 
   function handleBulkDelete() {
     if (selected.size === 0) return;
-    selected.forEach(id => deletePatient(id));
+    selected.forEach(id => deletePatientMutation.mutate(id));
     toast.success(`${selected.size} patient(s) deleted`);
     addNotification({
       id: `n_${Date.now()}`,
@@ -496,7 +508,12 @@ export function PatientsView() {
           })}
         </div>
 
-        {paged.length === 0 && (
+        {isLoadingPatients ? (
+          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#D6F04C] border-t-transparent" />
+            <p className="mt-4 text-sm">Loading patients from database...</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="py-16 text-center">
             <Users className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" />
             <p className="text-sm text-muted-foreground">No patients found</p>
@@ -504,7 +521,7 @@ export function PatientsView() {
               <Plus className="h-3.5 w-3.5" /> Register new patient
             </Button>
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Pagination */}

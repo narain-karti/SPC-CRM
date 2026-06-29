@@ -1,18 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Heart, Activity, FileText, Check, ChevronRight,
-  ChevronLeft, Sparkles, Phone, Mail, MapPin
+  ChevronLeft, Sparkles, Phone
 } from "lucide-react";
 import { Modal } from "../Modal";
 import { Field, TextInput, TextArea, SelectInput, Button } from "../Form";
 import { useAppStore } from "@/lib/store";
-import { branches, therapists } from "@/lib/data";
-import { cn, uid, todayISO } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { Patient } from "@/lib/types";
+import { useCreatePatient, useCreateNotification, useBranches, useTherapists } from "@/hooks/use-supabase-query";
 
 interface Props {
   open: boolean;
@@ -26,8 +25,6 @@ const steps = [
   { key: "treatment", label: "Treatment", icon: Heart },
   { key: "review", label: "Review", icon: FileText },
 ];
-
-const avatarColors = ["#D6F04C", "#B79AFB", "#5EEAD4", "#FBBF24", "#F472B6", "#60A5FA", "#34D399", "#FB923C"];
 
 interface FormData {
   name: string;
@@ -51,16 +48,32 @@ interface FormData {
 
 const initial: FormData = {
   name: "", age: "", gender: "Male", dob: "", phone: "", email: "",
-  address: "", emergencyContact: "", branchId: branches[0].id, bloodGroup: "O+",
+  address: "", emergencyContact: "", branchId: "", bloodGroup: "O+",
   allergies: "", conditions: "", previousTreatments: "", currentTreatment: "",
-  therapistId: therapists[0].id, totalSessions: "12", tags: "Regular",
+  therapistId: "", totalSessions: "12", tags: "Regular",
 };
 
 export function PatientRegistrationModal({ open, onOpenChange }: Props) {
-  const { addPatient, addNotification } = useAppStore();
+  const { currentBranchId } = useAppStore();
+  const { data: branches = [] } = useBranches();
+  const { data: therapists = [] } = useTherapists(currentBranchId);
+  
+  const createPatient = useCreatePatient();
+  const createNotification = useCreateNotification();
   const [step, setStep] = useState(0);
   const [data, setData] = useState<FormData>(initial);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
+
+  // Initialize form with fetched data
+  useEffect(() => {
+    if (open) {
+      setData(prev => ({
+        ...prev,
+        branchId: branches.find(b => b.id === currentBranchId)?.id || branches[0]?.id || "",
+        therapistId: therapists[0]?.id || "",
+      }));
+    }
+  }, [open, branches, therapists, currentBranchId]);
 
   function update<K extends keyof FormData>(key: K, value: FormData[K]) {
     setData(d => ({ ...d, [key]: value }));
@@ -109,60 +122,45 @@ export function PatientRegistrationModal({ open, onOpenChange }: Props) {
       toast.error("Please fix the errors before submitting");
       return;
     }
-    const patient: Patient = {
-      id: uid("pt"),
-      patientId: `SPC-${String(2024000 + Math.floor(Math.random() * 9999))}`,
+    const patientPayload = {
+      patient_id_code: `SPC-${String(2024000 + Math.floor(Math.random() * 9999))}`,
       name: data.name.trim(),
       age: Number(data.age),
       gender: data.gender,
-      dob: data.dob,
       phone: data.phone.trim(),
-      email: data.email.trim() || `${data.name.toLowerCase().replace(/\s/g, ".")}@email.com`,
-      address: data.address.trim(),
-      emergencyContact: data.emergencyContact.trim(),
-      branchId: data.branchId,
-      bloodGroup: data.bloodGroup,
-      allergies: data.allergies.trim() ? data.allergies.split(",").map(a => a.trim()) : ["None"],
-      conditions: data.conditions.split(",").map(c => c.trim()).filter(Boolean),
-      previousTreatments: data.previousTreatments.trim() ? data.previousTreatments.split(",").map(t => t.trim()) : [],
-      currentTreatment: data.currentTreatment.trim(),
-      status: "in_consultation",
-      therapistId: data.therapistId,
-      tags: data.tags.split(",").map(t => t.trim()).filter(Boolean),
-      avatarColor: avatarColors[Math.floor(Math.random() * avatarColors.length)],
-      registeredOn: todayISO(),
-      lastVisit: todayISO(),
-      nextAppointment: undefined,
+      email: data.email.trim() || null,
+      branch_id: data.branchId,
+      status: "active",
+      therapist_id: data.therapistId,
+      tags: data.tags.split(",").map(t => t.trim()).filter(Boolean).concat(data.conditions.split(",").map(c => c.trim()).filter(Boolean)),
+      balance_due: 0,
       progress: 0,
-      totalSessions: Number(data.totalSessions) || 12,
-      completedSessions: 0,
-      balance: 0,
     };
-    addPatient(patient);
-    addNotification({
-      id: uid("n"),
-      type: "registration",
-      title: "New patient registered",
-      message: `${patient.name} registered at ${branches.find(b => b.id === patient.branchId)?.name}`,
-      time: "Just now",
-      read: false,
-      priority: "medium",
+    
+    createPatient.mutate(patientPayload as any, {
+      onSuccess: (resData) => {
+        createNotification.mutate({
+          type: "registration",
+          title: "New patient registered",
+          message: `${resData.name} registered at ${branches.find(b => b.id === resData.branch_id)?.name}`,
+          priority: "medium"
+        });
+        
+        toast.success(`${resData.name} registered successfully!`, {
+          description: `Patient ID: ${resData.patient_id_code}`,
+        });
+        
+        setStep(0);
+        setData(initial);
+        onOpenChange(false);
+      }
     });
-    toast.success(`${patient.name} registered successfully!`, {
-      description: `Patient ID: ${patient.patientId}`,
-    });
-    setStep(0);
-    setData(initial);
-    onOpenChange(false);
   }
 
   function handleClose(open: boolean) {
     if (!open) {
-      setTimeout(() => {
-        setStep(0);
-        setData(initial);
-        setErrors({});
-      }, 200);
+      setStep(0);
+      setData(initial);
     }
     onOpenChange(open);
   }
@@ -171,293 +169,272 @@ export function PatientRegistrationModal({ open, onOpenChange }: Props) {
     <Modal
       open={open}
       onOpenChange={handleClose}
-      size="xl"
-      title="Register New Patient"
-      description="Complete the multi-step form to add a new patient to the CRM"
+      size="4xl"
+      title=""
+      className="p-0 overflow-hidden bg-background"
     >
-      {/* Stepper */}
-      <div className="mb-6 -mt-2">
-        <div className="flex items-center justify-between gap-1 sm:gap-2 overflow-x-auto no-scrollbar pb-1">
-          {steps.map((s, i) => {
-            const Icon = s.icon;
-            const isActive = i === step;
-            const isComplete = i < step;
-            return (
-              <div key={s.key} className="flex items-center flex-1 min-w-0">
-                <button
-                  type="button"
-                  onClick={() => i < step && setStep(i)}
+      <div className="flex flex-col md:flex-row h-[85vh] md:h-[650px]">
+        {/* Sidebar */}
+        <div className="w-full md:w-64 shrink-0 bg-muted/30 border-b md:border-b-0 md:border-r border-border p-6 flex flex-col">
+          <div className="mb-8">
+            <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-lime-600 to-lime-400 dark:from-lime-400 dark:to-lime-200">
+              New Patient
+            </h2>
+            <p className="text-xs text-muted-foreground mt-1">Complete the registration process</p>
+          </div>
+          
+          <div className="flex-1 space-y-1">
+            {steps.map((s, i) => {
+              const Icon = s.icon;
+              const isActive = step === i;
+              const isPast = step > i;
+              return (
+                <div 
+                  key={s.key}
                   className={cn(
-                    "flex items-center gap-2 rounded-xl px-2 sm:px-3 py-1.5 transition-all",
-                    isActive && "bg-foreground text-background",
-                    isComplete && "bg-[#D6F04C]/20 text-[#8FA61E]",
-                    !isActive && !isComplete && "text-muted-foreground"
+                    "flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all relative overflow-hidden",
+                    isActive ? "bg-background shadow-sm ring-1 ring-border text-foreground" : 
+                    isPast ? "text-muted-foreground hover:bg-muted/50 cursor-pointer" : "text-muted-foreground/50"
                   )}
+                  onClick={() => isPast && setStep(i)}
                 >
+                  {isActive && (
+                    <motion.div 
+                      layoutId="activeStep" 
+                      className="absolute inset-0 bg-lime-500/5 dark:bg-lime-500/10 pointer-events-none" 
+                      initial={false}
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
                   <div className={cn(
-                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
-                    isActive ? "bg-background text-foreground" : isComplete ? "bg-[#D6F04C] text-[#0F1117]" : "bg-muted"
+                    "h-7 w-7 rounded-lg flex items-center justify-center shrink-0 transition-colors z-10",
+                    isActive ? "bg-lime-500/10 text-lime-600 dark:text-lime-400" :
+                    isPast ? "bg-muted text-muted-foreground" : "bg-transparent"
                   )}>
-                    {isComplete ? <Check className="h-3 w-3" /> : i + 1}
+                    {isPast ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
                   </div>
-                  <span className="text-xs font-medium hidden sm:block">{s.label}</span>
-                </button>
-                {i < steps.length - 1 && (
-                  <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0 mx-0.5" />
+                  <span className="z-10">{s.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 flex flex-col min-w-0 bg-background relative">
+          <div className="flex-1 overflow-y-auto p-6 md:p-8">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="max-w-xl"
+              >
+                {step === 0 && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <User className="h-5 w-5 text-lime-500" />
+                        Personal Information
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">Basic details of the patient.</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                      <Field label="Full Name" required error={errors.name} className="sm:col-span-2">
+                        <TextInput autoFocus value={data.name} onChange={e => update("name", e.target.value)} placeholder="e.g. John Doe" invalid={!!errors.name} />
+                      </Field>
+                      <Field label="Age" required error={errors.age}>
+                        <TextInput type="number" value={data.age} onChange={e => update("age", e.target.value)} placeholder="e.g. 35" invalid={!!errors.age} />
+                      </Field>
+                      <Field label="Gender" required>
+                        <SelectInput
+                          value={data.gender}
+                          onValueChange={(v) => update("gender", v as "Male" | "Female" | "Other")}
+                          options={[
+                            { value: "Male", label: "Male" },
+                            { value: "Female", label: "Female" },
+                            { value: "Other", label: "Other" },
+                          ]}
+                        />
+                      </Field>
+                      <Field label="Date of Birth" required error={errors.dob} className="sm:col-span-2">
+                        <TextInput type="date" value={data.dob} onChange={e => update("dob", e.target.value)} invalid={!!errors.dob} />
+                      </Field>
+                    </div>
+                  </div>
                 )}
-              </div>
-            );
-          })}
+
+                {step === 1 && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Phone className="h-5 w-5 text-lime-500" />
+                        Contact Details
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">How can we reach the patient?</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <Field label="Phone Number" required error={errors.phone}>
+                          <TextInput autoFocus value={data.phone} onChange={e => update("phone", e.target.value)} placeholder="+91 98765 43210" invalid={!!errors.phone} />
+                        </Field>
+                        <Field label="Email Address" error={errors.email}>
+                          <TextInput type="email" value={data.email} onChange={e => update("email", e.target.value)} placeholder="john@example.com" invalid={!!errors.email} />
+                        </Field>
+                      </div>
+                      <Field label="Residential Address" required error={errors.address}>
+                        <TextArea value={data.address} onChange={e => update("address", e.target.value)} placeholder="Full street address, city, state" invalid={!!errors.address} />
+                      </Field>
+                      <Field label="Emergency Contact (Name & Number)" required error={errors.emergencyContact}>
+                        <TextInput value={data.emergencyContact} onChange={e => update("emergencyContact", e.target.value)} placeholder="e.g. Jane Doe - +91 98765 12345" invalid={!!errors.emergencyContact} />
+                      </Field>
+                      <Field label="Preferred Branch" required>
+                        <SelectInput
+                          value={data.branchId}
+                          onValueChange={(v) => update("branchId", v)}
+                          options={branches.map(b => ({ value: b.id, label: `${b.name} — ${b.location}` }))}
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                )}
+
+                {step === 2 && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Activity className="h-5 w-5 text-lime-500" />
+                        Medical History
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">Important clinical information.</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-5">
+                      <Field label="Blood Group">
+                        <SelectInput
+                          value={data.bloodGroup}
+                          onValueChange={(v) => update("bloodGroup", v)}
+                          options={[
+                            { value: "O+", label: "O+" }, { value: "O-", label: "O-" },
+                            { value: "A+", label: "A+" }, { value: "A-", label: "A-" },
+                            { value: "B+", label: "B+" }, { value: "B-", label: "B-" },
+                            { value: "AB+", label: "AB+" }, { value: "AB-", label: "AB-" },
+                          ]}
+                        />
+                      </Field>
+                      <Field label="Primary Condition / Complaint" required error={errors.conditions}>
+                        <TextInput autoFocus value={data.conditions} onChange={e => update("conditions", e.target.value)} placeholder="e.g. Lower Back Pain, Post-Op ACL" invalid={!!errors.conditions} />
+                      </Field>
+                      <Field label="Known Allergies (if any)">
+                        <TextInput value={data.allergies} onChange={e => update("allergies", e.target.value)} placeholder="e.g. Latex, Penicillin" />
+                      </Field>
+                      <Field label="Previous Treatments / Surgeries">
+                        <TextArea value={data.previousTreatments} onChange={e => update("previousTreatments", e.target.value)} placeholder="Brief history of relevant past treatments..." />
+                      </Field>
+                    </div>
+                  </div>
+                )}
+
+                {step === 3 && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Heart className="h-5 w-5 text-lime-500" />
+                        Treatment Plan
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">Assign therapist and set goals.</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-5">
+                      <Field label="Assigned Therapist" required>
+                        <SelectInput
+                          value={data.therapistId}
+                          onValueChange={(v) => update("therapistId", v)}
+                          options={therapists.map(t => ({ value: t.id, label: t.name }))}
+                        />
+                      </Field>
+                      <Field label="Initial Treatment Plan" required error={errors.currentTreatment}>
+                        <TextArea autoFocus value={data.currentTreatment} onChange={e => update("currentTreatment", e.target.value)} placeholder="e.g. 12 sessions of core strengthening, manual therapy..." invalid={!!errors.currentTreatment} />
+                      </Field>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <Field label="Recommended Sessions">
+                          <TextInput type="number" value={data.totalSessions} onChange={e => update("totalSessions", e.target.value)} />
+                        </Field>
+                        <Field label="Tags (Comma separated)">
+                          <TextInput value={data.tags} onChange={e => update("tags", e.target.value)} placeholder="e.g. VIP, Sports Rehab, Elderly" />
+                        </Field>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {step === 4 && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Check className="h-5 w-5 text-lime-500" />
+                        Review Details
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">Please verify the information before finalizing.</p>
+                    </div>
+                    
+                    <div className="space-y-4 text-sm bg-muted/30 p-5 rounded-2xl ring-1 ring-border/50">
+                      <div className="grid grid-cols-2 gap-y-3">
+                        <ReviewRow label="Name" value={data.name} />
+                        <ReviewRow label="Age/Gender" value={`${data.age} yrs, ${data.gender}`} />
+                        <ReviewRow label="Phone" value={data.phone} />
+                        <ReviewRow label="Condition" value={data.conditions} />
+                        <ReviewRow label="Branch" value={branches.find(b => b.id === data.branchId)?.name || "—"} />
+                        <ReviewRow label="Therapist" value={therapists.find(t => t.id === data.therapistId)?.name || "—"} />
+                      </div>
+                      <div className="pt-4 mt-4 border-t border-border/50">
+                        <div className="flex items-center gap-2 text-lime-600 dark:text-lime-400 font-medium">
+                          <Sparkles className="h-4 w-4" />
+                          Ready to onboard!
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+          
+          <div className="border-t border-border p-4 md:p-6 bg-muted/10 flex items-center justify-between shrink-0">
+            <Button
+              variant="ghost"
+              onClick={prev}
+              disabled={step === 0}
+              className={step === 0 ? "opacity-0 pointer-events-none" : ""}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1.5" /> Back
+            </Button>
+            
+            {step < steps.length - 1 ? (
+              <Button variant="lime" onClick={next} className="px-6">
+                Next <ChevronRight className="h-4 w-4 ml-1.5" />
+              </Button>
+            ) : (
+              <Button variant="lime" onClick={handleSubmit} disabled={createPatient.isPending} className="px-6">
+                {createPatient.isPending ? "Registering..." : "Complete Registration"}
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
-
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={step}
-          initial={{ opacity: 0, x: 12 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -12 }}
-          transition={{ duration: 0.25 }}
-        >
-          {step === 0 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <User className="h-4 w-4 text-[#D6F04C]" />
-                <h4 className="text-sm font-semibold">Personal Information</h4>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Full Name" required error={errors.name} className="sm:col-span-2">
-                  <TextInput
-                    value={data.name}
-                    onChange={e => update("name", e.target.value)}
-                    placeholder="e.g. Arjun Sharma"
-                    invalid={!!errors.name}
-                  />
-                </Field>
-                <Field label="Age" required error={errors.age}>
-                  <TextInput
-                    type="number"
-                    value={data.age}
-                    onChange={e => update("age", e.target.value)}
-                    placeholder="e.g. 32"
-                    invalid={!!errors.age}
-                  />
-                </Field>
-                <Field label="Gender" required>
-                  <SelectInput
-                    value={data.gender}
-                    onValueChange={(v) => update("gender", v as FormData["gender"])}
-                    options={[
-                      { value: "Male", label: "Male" },
-                      { value: "Female", label: "Female" },
-                      { value: "Other", label: "Other" },
-                    ]}
-                  />
-                </Field>
-                <Field label="Date of Birth" required error={errors.dob}>
-                  <TextInput
-                    type="date"
-                    value={data.dob}
-                    onChange={e => update("dob", e.target.value)}
-                    invalid={!!errors.dob}
-                  />
-                </Field>
-                <Field label="Blood Group">
-                  <SelectInput
-                    value={data.bloodGroup}
-                    onValueChange={(v) => update("bloodGroup", v)}
-                    options={["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"].map(b => ({ value: b, label: b }))}
-                  />
-                </Field>
-              </div>
-            </div>
-          )}
-
-          {step === 1 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Phone className="h-4 w-4 text-[#D6F04C]" />
-                <h4 className="text-sm font-semibold">Contact Information</h4>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Phone Number" required error={errors.phone}>
-                  <TextInput
-                    value={data.phone}
-                    onChange={e => update("phone", e.target.value)}
-                    placeholder="+91 98765 43210"
-                    invalid={!!errors.phone}
-                  />
-                </Field>
-                <Field label="Email Address" error={errors.email}>
-                  <TextInput
-                    type="email"
-                    value={data.email}
-                    onChange={e => update("email", e.target.value)}
-                    placeholder="patient@email.com"
-                    invalid={!!errors.email}
-                  />
-                </Field>
-                <Field label="Address" required error={errors.address} className="sm:col-span-2">
-                  <TextArea
-                    value={data.address}
-                    onChange={e => update("address", e.target.value)}
-                    placeholder="House no, Street, Area, City"
-                    invalid={!!errors.address}
-                  />
-                </Field>
-                <Field label="Emergency Contact" required error={errors.emergencyContact}>
-                  <TextInput
-                    value={data.emergencyContact}
-                    onChange={e => update("emergencyContact", e.target.value)}
-                    placeholder="+91 98765 43210"
-                    invalid={!!errors.emergencyContact}
-                  />
-                </Field>
-                <Field label="Preferred Branch" required>
-                  <SelectInput
-                    value={data.branchId}
-                    onValueChange={(v) => update("branchId", v)}
-                    options={branches.map(b => ({ value: b.id, label: `${b.name} — ${b.location}` }))}
-                  />
-                </Field>
-              </div>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Activity className="h-4 w-4 text-[#D6F04C]" />
-                <h4 className="text-sm font-semibold">Medical History</h4>
-              </div>
-              <Field label="Current Conditions / Complaints" required error={errors.conditions} hint="Comma-separated, e.g. Lower Back Pain, Sciatica">
-                <TextArea
-                  value={data.conditions}
-                  onChange={e => update("conditions", e.target.value)}
-                  placeholder="e.g. Lower Back Pain, Sciatica"
-                  invalid={!!errors.conditions}
-                />
-              </Field>
-              <Field label="Known Allergies" hint="Comma-separated, or leave blank if none">
-                <TextInput
-                  value={data.allergies}
-                  onChange={e => update("allergies", e.target.value)}
-                  placeholder="e.g. Penicillin, Latex"
-                />
-              </Field>
-              <Field label="Previous Treatments" hint="Comma-separated treatments undertaken">
-                <TextInput
-                  value={data.previousTreatments}
-                  onChange={e => update("previousTreatments", e.target.value)}
-                  placeholder="e.g. Manual Therapy, Dry Needling"
-                />
-              </Field>
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Heart className="h-4 w-4 text-[#D6F04C]" />
-                <h4 className="text-sm font-semibold">Treatment Plan</h4>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Assigned Therapist" required>
-                  <SelectInput
-                    value={data.therapistId}
-                    onValueChange={(v) => update("therapistId", v)}
-                    options={therapists.map(t => ({ value: t.id, label: `${t.name} — ${t.specialization}` }))}
-                  />
-                </Field>
-                <Field label="Total Sessions Planned" required>
-                  <TextInput
-                    type="number"
-                    value={data.totalSessions}
-                    onChange={e => update("totalSessions", e.target.value)}
-                    placeholder="e.g. 12"
-                  />
-                </Field>
-                <Field label="Current Treatment" required error={errors.currentTreatment} className="sm:col-span-2">
-                  <TextArea
-                    value={data.currentTreatment}
-                    onChange={e => update("currentTreatment", e.target.value)}
-                    placeholder="e.g. Manual Therapy + Cervical Traction, 3x/week"
-                    invalid={!!errors.currentTreatment}
-                  />
-                </Field>
-                <Field label="Tags" hint="Comma-separated: VIP, Sports, Post-Surgery, Regular">
-                  <TextInput
-                    value={data.tags}
-                    onChange={e => update("tags", e.target.value)}
-                    placeholder="Regular"
-                  />
-                </Field>
-              </div>
-            </div>
-          )}
-
-          {step === 4 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <FileText className="h-4 w-4 text-[#D6F04C]" />
-                <h4 className="text-sm font-semibold">Review & Confirm</h4>
-              </div>
-              <div className="rounded-2xl bg-muted/40 p-4 ring-1 ring-border space-y-3 max-h-[40vh] overflow-y-auto scrollbar-premium">
-                <ReviewRow label="Name" value={data.name} />
-                <ReviewRow label="Age / Gender" value={`${data.age}y · ${data.gender}`} />
-                <ReviewRow label="Date of Birth" value={data.dob} />
-                <ReviewRow label="Phone" value={data.phone} />
-                <ReviewRow label="Email" value={data.email || "—"} />
-                <ReviewRow label="Address" value={data.address} />
-                <ReviewRow label="Emergency Contact" value={data.emergencyContact} />
-                <ReviewRow label="Branch" value={branches.find(b => b.id === data.branchId)?.name || "—"} />
-                <ReviewRow label="Blood Group" value={data.bloodGroup} />
-                <ReviewRow label="Allergies" value={data.allergies || "None"} />
-                <ReviewRow label="Conditions" value={data.conditions} />
-                <ReviewRow label="Previous Treatments" value={data.previousTreatments || "—"} />
-                <ReviewRow label="Therapist" value={therapists.find(t => t.id === data.therapistId)?.name || "—"} />
-                <ReviewRow label="Total Sessions" value={data.totalSessions} />
-                <ReviewRow label="Current Treatment" value={data.currentTreatment} />
-                <ReviewRow label="Tags" value={data.tags} />
-              </div>
-              <div className="flex items-start gap-2 p-3 rounded-xl bg-[#D6F04C]/10 ring-1 ring-[#D6F04C]/30">
-                <Sparkles className="h-4 w-4 text-[#8FA61E] shrink-0 mt-0.5" />
-                <p className="text-xs text-foreground">
-                  A unique Patient ID will be auto-generated. The patient will be marked as <span className="font-semibold">In Consultation</span> status with 0% progress.
-                </p>
-              </div>
-            </div>
-          )}
-        </motion.div>
-      </AnimatePresence>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between gap-2 mt-6 pt-4 border-t border-border/60">
-        <Button variant="ghost" onClick={prev} disabled={step === 0}>
-          <ChevronLeft className="h-4 w-4" /> Back
-        </Button>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          Step {step + 1} of {steps.length}
-        </div>
-        {step < steps.length - 1 ? (
-          <Button variant="lime" onClick={next}>
-            Next <ChevronRight className="h-4 w-4" />
-          </Button>
-        ) : (
-          <Button variant="lime" onClick={handleSubmit}>
-            <Check className="h-4 w-4" /> Register Patient
-          </Button>
-        )}
       </div>
     </Modal>
   );
 }
 
-function ReviewRow({ label, value }: { label: string; value: string }) {
+function ReviewRow({ label, value }: { label: string, value: string }) {
   return (
-    <div className="flex items-start justify-between gap-3 text-sm">
-      <span className="text-muted-foreground text-xs">{label}</span>
-      <span className="font-medium text-foreground text-right max-w-[60%] break-words">{value || "—"}</span>
+    <div>
+      <div className="text-muted-foreground text-xs">{label}</div>
+      <div className="font-medium truncate pr-4">{value || "—"}</div>
     </div>
   );
 }

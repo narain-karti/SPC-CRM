@@ -6,7 +6,9 @@ import {
   Users, Calendar, Clock, IndianRupee, Activity, Zap, ChevronRight,
   Building2, Award, Crown, Star, UserCheck
 } from "lucide-react";
-import { kpiData, revenueData, monthlyRevenueData, branchComparisonData, leadSourceData, appointmentStatusData, therapistPerformanceData, branches, appointments, patients } from "@/lib/data";
+import { kpiData } from "@/lib/data"; // fallback if needed
+import { useAppointments, usePatients, useInvoices, useLeads } from "@/hooks/use-supabase-query";
+import { useAnalytics } from "@/hooks/use-analytics";
 import { KPICard } from "../KPICard";
 import { ChartCard } from "../ChartCard";
 import { SectionHeader } from "../SectionHeader";
@@ -24,6 +26,12 @@ export function DashboardView() {
   const { setView, openPatient, currentRole } = useAppStore();
   const isPhysio = currentRole === "physiotherapist";
   const isReception = currentRole === "receptionist";
+  
+  const { data: allAppointments = [], isLoading } = useAppointments("all");
+  const { data: patients = [] } = usePatients("all");
+  const { data: invoices = [] } = useInvoices("all");
+  const { data: leads = [] } = useLeads("all");
+  const { monthlyRevenueData, leadSourceData, appointmentStatusData, therapistPerformanceData, branchComparisonData, kpis } = useAnalytics("all");
 
   // Show dedicated physio dashboard for physiotherapists
   if (isPhysio) {
@@ -31,11 +39,36 @@ export function DashboardView() {
   }
 
   // Role-specific KPIs
-  const visibleKpis = isReception
-    ? kpiData.filter(k => ["Today's Patients", "Appointments", "Patients Waiting", "Consultations", "Pending Bills", "Lead Conversion"].includes(k.label))
-    : kpiData;
+  const today = new Date().toISOString().split("T")[0];
+  const todayAppts = allAppointments.filter((a: any) => a.date === today);
+  const pendingBills = invoices.filter((i: any) => i.status === "pending").length;
+  
+  const dynamicKpiData = [
+    { label: "Today's Patients", value: todayAppts.length, change: 0, icon: "Users", accent: "lime" as const, trend: "up" as const },
+    { label: "Appointments", value: allAppointments.length, change: 0, icon: "Calendar", accent: "purple" as const, trend: "up" as const },
+    { label: "Patients Waiting", value: todayAppts.filter((a: any) => a.status === "waiting").length, change: 0, icon: "Clock", accent: "amber" as const, trend: "down" as const },
+    { label: "Total Revenue", value: invoices.reduce((sum: number, i: any) => sum + (i.total || 0), 0), prefix: "₹", change: 0, icon: "IndianRupee", accent: "emerald" as const, trend: "up" as const },
+    { label: "Pending Bills", value: pendingBills, change: 0, icon: "Activity", accent: "rose" as const, trend: "down" as const },
+    { label: "Lead Conversion", value: kpis.conversionRate, suffix: "%", change: 0, icon: "Zap", accent: "blue" as const, trend: "up" as const },
+  ];
 
-  const todayAppointments = appointments.filter(a => a.date === appointments[0].date).slice(0, 6);
+  const visibleKpis = isReception
+    ? dynamicKpiData.filter(k => ["Today's Patients", "Appointments", "Patients Waiting", "Pending Bills", "Lead Conversion"].includes(k.label))
+    : dynamicKpiData;
+
+  const todayAppointments = allAppointments
+    .filter((a: any) => {
+      const today = new Date().toISOString().split("T")[0];
+      return a.date === today;
+    })
+    .slice(0, 6)
+    .map((a: any) => ({
+      ...a, 
+      patientId: a.patient_id, 
+      patientName: a.patient_name,
+      therapistId: a.therapist_id,
+      therapistName: a.therapist_name
+    }));
 
   return (
     <div className="space-y-6">
@@ -68,21 +101,21 @@ export function DashboardView() {
           </div>
           <div className="flex items-center gap-6">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Today's Revenue</div>
+              <div className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Total Revenue</div>
               <div className="mt-1 text-2xl font-semibold text-[#D6F04C]">
-                <AnimatedCounter value={48600} prefix="₹" />
+                <AnimatedCounter value={dynamicKpiData[3].value} prefix="₹" />
               </div>
               <div className="flex items-center gap-1 text-[11px] text-emerald-400">
-                <TrendingUp className="h-3 w-3" /> +18% vs yesterday
+                <TrendingUp className="h-3 w-3" /> Updated just now
               </div>
             </div>
             <div className="hidden md:block">
               <div className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Active Patients</div>
               <div className="mt-1 text-2xl font-semibold text-[#B79AFB]">
-                <AnimatedCounter value={142} />
+                <AnimatedCounter value={patients.length} />
               </div>
               <div className="flex items-center gap-1 text-[11px] text-white/50">
-                <UserCheck className="h-3 w-3" /> 58 staff on duty
+                <UserCheck className="h-3 w-3" /> Live Data
               </div>
             </div>
           </div>
@@ -116,7 +149,7 @@ export function DashboardView() {
           }
         >
           <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={revenueData} margin={{ top: 10, right: 0, left: -10, bottom: 0 }}>
+            <AreaChart data={monthlyRevenueData} margin={{ top: 10, right: 0, left: -10, bottom: 0 }}>
               <defs>
                 <linearGradient id="revLime" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#D6F04C" stopOpacity={0.5} />
@@ -251,9 +284,9 @@ export function DashboardView() {
           delay={0.3}
         >
           <div className="space-y-2">
-            {[...branches].sort((a, b) => b.revenue - a.revenue).map((b, i) => (
+            {[...branchComparisonData].sort((a, b) => b.revenue - a.revenue).map((b, i) => (
               <motion.div
-                key={b.id}
+                key={b.name}
                 initial={{ opacity: 0, x: -12 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.4 + i * 0.06 }}
@@ -300,8 +333,11 @@ export function DashboardView() {
           }
         >
           <div className="space-y-2 max-h-[320px] overflow-y-auto scrollbar-premium pr-1">
-            {todayAppointments.map((appt, i) => {
-              const p = patients.find(p => p.id === appt.patientId);
+            {isLoading ? (
+            <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+              Loading appointments...
+            </div>
+          ) : todayAppointments.length > 0 ? todayAppointments.map((appt, i) => {
               return (
                 <motion.button
                   key={appt.id}
@@ -317,7 +353,7 @@ export function DashboardView() {
                     <span className="text-[10px] text-muted-foreground">{appt.duration}min</span>
                   </div>
                   <div className="h-8 w-px bg-border" />
-                  {p && <Avatar name={p.name} color={p.avatarColor} size="sm" />}
+                  <Avatar name={appt.patientName} color="#D6F04C" size="sm" />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{appt.patientName}</div>
                     <div className="text-[11px] text-muted-foreground truncate">{appt.therapistName} · {appt.type.replace("_", " ")}</div>
@@ -325,7 +361,7 @@ export function DashboardView() {
                   <StatusBadge status={appt.status} size="sm" />
                 </motion.button>
               );
-            })}
+            }) : null}
           </div>
         </ChartCard>
       </div>

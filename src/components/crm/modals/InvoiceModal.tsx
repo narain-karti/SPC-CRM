@@ -5,9 +5,15 @@ import { Plus, Trash2 } from "lucide-react";
 import { Modal } from "../Modal";
 import { Field, TextInput, SelectInput, Button } from "../Form";
 import { useAppStore } from "@/lib/store";
-import { branches, treatmentPackages } from "@/lib/data";
-import { uid, todayISO, formatINR } from "@/lib/utils";
+import { todayISO, formatINR } from "@/lib/utils";
 import { toast } from "sonner";
+import {
+  usePatients,
+  useBranches,
+  useTreatmentPackages,
+  useCreateInvoice,
+  useCreateNotification,
+} from "@/hooks/use-supabase-query";
 import type { Invoice, InvoiceItem } from "@/lib/types";
 
 interface Props {
@@ -17,10 +23,17 @@ interface Props {
 }
 
 export function InvoiceModal({ open, onOpenChange, presetPatientId }: Props) {
-  const { patients, addInvoice, addNotification } = useAppStore();
+  const { currentBranchId } = useAppStore();
+  const { data: rawPatients = [] } = usePatients(currentBranchId);
+  const { data: branches = [] } = useBranches();
+  const { data: treatmentPackages = [] } = useTreatmentPackages();
+  
+  const createInvoice = useCreateInvoice();
+  const createNotification = useCreateNotification();
+
   const [form, setForm] = useState({
-    patientId: presetPatientId || patients[0]?.id || "",
-    branchId: branches[0].id,
+    patientId: presetPatientId || rawPatients[0]?.id || "",
+    branchId: branches.find(b => b.id === currentBranchId)?.id || branches[0]?.id || "",
     date: todayISO(),
     dueDate: "",
     paymentMethod: "upi" as Invoice["paymentMethod"],
@@ -67,17 +80,15 @@ export function InvoiceModal({ open, onOpenChange, presetPatientId }: Props) {
       toast.error("Please fix errors before creating invoice");
       return;
     }
-    const patient = patients.find(p => p.id === form.patientId);
+    const patient = rawPatients.find(p => p.id === form.patientId);
     if (!patient) return;
 
-    const invoice: Invoice = {
-      id: uid("inv"),
-      invoiceNo: `INV-2026-${String(1000 + Math.floor(Math.random() * 8999))}`,
-      patientId: patient.id,
-      patientName: patient.name,
-      branchId: form.branchId,
+    const payload = {
+      invoice_no: `INV-2026-${String(1000 + Math.floor(Math.random() * 8999))}`,
+      patient_id: patient.id,
+      branch_id: form.branchId,
       date: form.date,
-      dueDate: form.dueDate,
+      due_date: form.dueDate,
       items: items.filter(i => i.description.trim()),
       subtotal,
       tax,
@@ -85,23 +96,27 @@ export function InvoiceModal({ open, onOpenChange, presetPatientId }: Props) {
       total,
       paid: 0,
       status: "pending",
-      paymentMethod: form.paymentMethod,
+      payment_method: form.paymentMethod,
     };
-    addInvoice(invoice);
-    addNotification({
-      id: uid("n"),
-      type: "payment",
-      title: "Invoice created",
-      message: `${invoice.invoiceNo} for ${patient.name} — ${formatINR(total)}`,
-      time: "Just now",
-      read: false,
-      priority: "medium",
+
+    createInvoice.mutate(payload as any, {
+      onSuccess: () => {
+        createNotification.mutate({
+          type: "payment",
+          title: "Invoice created",
+          message: `${payload.invoice_no} for ${patient.name} — ${formatINR(total)}`,
+          priority: "medium",
+        });
+        toast.success("Invoice created!", {
+          description: `${payload.invoice_no} · ${formatINR(total)}`,
+        });
+        onOpenChange(false);
+        setItems([{ description: "Consultation Fee", qty: 1, rate: 600, amount: 600 }]);
+      },
+      onError: (error: any) => {
+        toast.error("Failed to create invoice", { description: error.message });
+      }
     });
-    toast.success("Invoice created!", {
-      description: `${invoice.invoiceNo} · ${formatINR(total)}`,
-    });
-    onOpenChange(false);
-    setItems([{ description: "Consultation Fee", qty: 1, rate: 600, amount: 600 }]);
   }
 
   return (
@@ -114,7 +129,9 @@ export function InvoiceModal({ open, onOpenChange, presetPatientId }: Props) {
       footer={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="lime" onClick={submit}>Create Invoice · {formatINR(total)}</Button>
+          <Button variant="lime" onClick={submit} disabled={createInvoice.isPending}>
+            {createInvoice.isPending ? "Creating..." : `Create Invoice · ${formatINR(total)}`}
+          </Button>
         </>
       }
     >
@@ -124,7 +141,7 @@ export function InvoiceModal({ open, onOpenChange, presetPatientId }: Props) {
             <SelectInput
               value={form.patientId}
               onValueChange={(v) => update("patientId", v)}
-              options={patients.map(p => ({ value: p.id, label: `${p.name} (${p.patientId})` }))}
+              options={rawPatients.map(p => ({ value: p.id, label: `${p.name} (${p.patient_id_code})` }))}
               invalid={!!errors.patientId}
             />
           </Field>
@@ -141,82 +158,126 @@ export function InvoiceModal({ open, onOpenChange, presetPatientId }: Props) {
           <Field label="Due Date" required error={errors.dueDate}>
             <TextInput type="date" value={form.dueDate} onChange={e => update("dueDate", e.target.value)} invalid={!!errors.dueDate} />
           </Field>
-          <Field label="Quick-add package">
-            <SelectInput
-              value=""
-              onValueChange={(v) => v && applyPackage(v)}
-              placeholder="Select a treatment package…"
-              options={treatmentPackages.map(p => ({ value: p.id, label: `${p.name} — ${formatINR(p.price)}` }))}
-            />
-          </Field>
-          <Field label="Payment Method">
-            <SelectInput
-              value={form.paymentMethod || "upi"}
-              onValueChange={(v) => update("paymentMethod", v as Invoice["paymentMethod"])}
-              options={[
-                { value: "cash", label: "Cash" },
-                { value: "upi", label: "UPI" },
-                { value: "card", label: "Card" },
-                { value: "insurance", label: "Insurance" },
-              ]}
-            />
-          </Field>
         </div>
 
-        {/* Items */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-medium">Line Items</label>
-            <Button variant="outline" size="sm" onClick={addItem}>
-              <Plus className="h-3.5 w-3.5" /> Add Item
-            </Button>
+        <div className="rounded-xl border border-border bg-muted/20 overflow-hidden">
+          <div className="p-3 bg-muted border-b border-border flex items-center justify-between">
+            <h4 className="font-semibold text-sm flex items-center gap-2">Line Items</h4>
+            <div className="flex items-center gap-2">
+              <SelectInput
+                value=""
+                onValueChange={applyPackage}
+                placeholder="Apply Package..."
+                className="w-40 h-8 text-xs bg-background"
+                options={treatmentPackages.map(p => ({ value: p.id, label: p.name }))}
+              />
+              <Button variant="outline" size="sm" onClick={addItem} className="h-8">
+                <Plus className="h-3 w-3 mr-1" /> Add
+              </Button>
+            </div>
           </div>
-          {errors.items && <p className="text-[11px] text-rose-500">{errors.items}</p>}
-          <div className="space-y-2">
-            {items.map((it, i) => (
-              <div key={i} className="grid grid-cols-12 gap-2 items-center p-2 rounded-xl bg-muted/40 ring-1 ring-border">
-                <input
-                  value={it.description}
-                  onChange={e => updateItem(i, { description: e.target.value })}
-                  placeholder="Description"
-                  className="col-span-12 sm:col-span-6 h-9 px-2 rounded-md bg-card ring-1 ring-border text-sm focus:ring-2 focus:ring-foreground/20 outline-none"
-                />
-                <input
-                  type="number"
-                  value={it.qty}
-                  onChange={e => updateItem(i, { qty: Number(e.target.value) || 0 })}
-                  placeholder="Qty"
-                  className="col-span-3 sm:col-span-2 h-9 px-2 rounded-md bg-card ring-1 ring-border text-sm focus:ring-2 focus:ring-foreground/20 outline-none"
-                />
-                <input
-                  type="number"
-                  value={it.rate}
-                  onChange={e => updateItem(i, { rate: Number(e.target.value) || 0 })}
-                  placeholder="Rate"
-                  className="col-span-5 sm:col-span-2 h-9 px-2 rounded-md bg-card ring-1 ring-border text-sm focus:ring-2 focus:ring-foreground/20 outline-none"
-                />
-                <div className="col-span-3 sm:col-span-1 text-right text-xs font-medium">{formatINR(it.amount)}</div>
-                <button
-                  onClick={() => removeItem(i)}
-                  className="col-span-1 h-8 w-8 flex items-center justify-center rounded-md hover:bg-rose-500/10 text-rose-500"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+          <div className="p-1 max-h-[300px] overflow-y-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-muted-foreground bg-background/50">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Description</th>
+                  <th className="px-3 py-2 font-medium w-20">Qty</th>
+                  <th className="px-3 py-2 font-medium w-28">Rate (₹)</th>
+                  <th className="px-3 py-2 font-medium w-32 text-right">Amount (₹)</th>
+                  <th className="px-2 py-2 w-10"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {items.map((it, idx) => (
+                  <tr key={idx} className="group hover:bg-muted/30 transition-colors">
+                    <td className="px-3 py-2">
+                      <TextInput 
+                        value={it.description} 
+                        onChange={e => updateItem(idx, { description: e.target.value })} 
+                        placeholder="Item description" 
+                        className="h-8 shadow-none bg-transparent"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <TextInput 
+                        type="number" min="1" 
+                        value={it.qty.toString()} 
+                        onChange={e => updateItem(idx, { qty: Number(e.target.value) || 0 })} 
+                        className="h-8 shadow-none bg-transparent text-center"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <TextInput 
+                        type="number" min="0" 
+                        value={it.rate.toString()} 
+                        onChange={e => updateItem(idx, { rate: Number(e.target.value) || 0 })} 
+                        className="h-8 shadow-none bg-transparent text-right"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium">
+                      {formatINR(it.amount)}
+                    </td>
+                    <td className="px-2 py-2">
+                      <button 
+                        onClick={() => removeItem(idx)}
+                        className="p-1.5 text-muted-foreground hover:text-rose-500 rounded-md hover:bg-rose-500/10 transition-colors opacity-0 group-hover:opacity-100"
+                        title="Remove item"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {items.length === 0 && (
+              <div className="text-center py-6 text-sm text-muted-foreground">
+                No items added. <button onClick={addItem} className="text-lime-600 font-medium hover:underline">Add an item</button>
               </div>
-            ))}
+            )}
+            {errors.items && <p className="text-[11px] text-rose-500 px-4 py-2 bg-rose-500/10 font-medium">{errors.items}</p>}
           </div>
-        </div>
-
-        {/* Totals */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Discount (₹)">
-            <TextInput type="number" value={form.discount} onChange={e => update("discount", e.target.value)} placeholder="0" />
-          </Field>
-          <div className="space-y-1 p-3 rounded-xl bg-muted/40 ring-1 ring-border text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-medium">{formatINR(subtotal)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">GST (5%)</span><span className="font-medium">{formatINR(tax)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span className="font-medium text-rose-500">−{formatINR(discount)}</span></div>
-            <div className="flex justify-between pt-1 border-t border-border"><span className="font-semibold">Total</span><span className="font-bold text-base">{formatINR(total)}</span></div>
+          
+          <div className="bg-background border-t border-border p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <Field label="Payment Method">
+                <SelectInput
+                  value={form.paymentMethod}
+                  onValueChange={(v) => update("paymentMethod", v as any)}
+                  options={[
+                    { value: "upi", label: "UPI (Google Pay, PhonePe)" },
+                    { value: "card", label: "Credit/Debit Card" },
+                    { value: "cash", label: "Cash" },
+                    { value: "bank_transfer", label: "Bank Transfer" },
+                  ]}
+                />
+              </Field>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-medium">{formatINR(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm items-center">
+                <span className="text-muted-foreground">Discount (₹)</span>
+                <input 
+                  type="number" 
+                  value={form.discount}
+                  onChange={e => update("discount", e.target.value)}
+                  className="w-24 h-7 px-2 text-right text-sm rounded border border-border bg-muted focus:ring-1 focus:ring-lime-500 outline-none"
+                  placeholder="0"
+                />
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">GST (5%)</span>
+                <span className="font-medium">{formatINR(tax)}</span>
+              </div>
+              <div className="pt-2 mt-2 border-t border-border flex justify-between items-center">
+                <span className="font-semibold">Total Amount</span>
+                <span className="text-xl font-bold text-lime-600 dark:text-lime-400">{formatINR(total)}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

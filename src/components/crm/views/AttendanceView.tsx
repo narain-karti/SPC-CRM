@@ -6,14 +6,22 @@ import {
   Clock, QrCode, MapPin, Hand, Plus, CheckCircle2, XCircle,
   Calendar as CalIcon, TrendingUp, Users, Download, ChevronLeft, ChevronRight
 } from "lucide-react";
-import { employees, branches, attendanceRecords } from "@/lib/data";
+import { branches } from "@/lib/data";
+import { useAppStore } from "@/lib/store";
 import { Avatar } from "../Avatar";
 import { StatusBadge } from "../StatusBadge";
 import { SectionHeader } from "../SectionHeader";
 import { AnimatedCounter } from "../AnimatedCounter";
-import { cn } from "@/lib/utils";
+import { cn, mapAttendanceRecord } from "@/lib/utils";
+import { useAttendanceRecords, useEmployees } from "@/hooks/use-supabase-query";
 
 export function AttendanceView() {
+  const { currentBranchId } = useAppStore();
+  const { data: rawEmployees = [] } = useEmployees(currentBranchId);
+  const { data: rawAttendance = [], isLoading } = useAttendanceRecords(currentBranchId);
+  const employees = rawEmployees.map(e => ({ ...e, id: e.id }));
+  const attendanceRecords = rawAttendance.map(mapAttendanceRecord);
+  
   const today = new Date().toISOString().split("T")[0];
   const todayRecords = attendanceRecords.filter(a => a.date === today);
   const present = todayRecords.filter(a => a.status === "present").length;
@@ -122,7 +130,17 @@ export function AttendanceView() {
             <h3 className="text-sm font-semibold">Today's Check-ins · {new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long" })}</h3>
           </div>
           <div className="divide-y divide-border/40">
-            {todayRecords.map((r, i) => {
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#D6F04C] border-t-transparent" />
+                <p className="mt-4 text-sm">Loading attendance...</p>
+              </div>
+            ) : todayRecords.length === 0 ? (
+              <div className="py-16 text-center text-muted-foreground">
+                <Clock className="h-8 w-8 mx-auto mb-3 opacity-20" />
+                No attendance records for today
+              </div>
+            ) : todayRecords.map((r, i) => {
               const emp = employees.find(e => e.id === r.employeeId);
               const branch = branches.find(b => b.id === r.branchId);
               if (!emp) return null;

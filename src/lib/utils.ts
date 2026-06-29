@@ -30,6 +30,24 @@ export function formatDate(dateStr: string, opts: { withTime?: boolean } = {}): 
   }
 }
 
+export function formatTimeAgo(dateStr: string) {
+  if (!dateStr) return "";
+  const date = new Date(dateStr);
+  const now = new Date();
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  
+  if (seconds < 60) return "Just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return formatDate(dateStr);
+}
+
+
+
 export function todayISO(): string {
   return new Date().toISOString().split("T")[0];
 }
@@ -232,4 +250,155 @@ ${rows.map(r => `<tr>${columns.map(c => `<td style="padding:6px;">${formatCell(r
 
 export function cn(...classes: (string | undefined | null | false)[]): string {
   return classes.filter(Boolean).join(" ");
+}
+
+export function mapPatient(p: any): import("./types").Patient {
+  return {
+    id: p.id,
+    patientId: p.patient_id_code,
+    name: p.name,
+    age: p.age,
+    gender: p.gender,
+    dob: "1990-01-01",
+    phone: p.phone,
+    email: p.email || "",
+    address: "",
+    emergencyContact: "",
+    branchId: p.branch_id,
+    bloodGroup: "O+",
+    allergies: [],
+    conditions: p.tags || [],
+    previousTreatments: [],
+    currentTreatment: "General Therapy",
+    status: p.status,
+    therapistId: p.therapist_id || "",
+    tags: p.tags || [],
+    avatarColor: "#D6F04C",
+    registeredOn: p.created_at,
+    lastVisit: p.last_visit || p.created_at,
+    nextAppointment: p.next_appointment,
+    progress: p.progress,
+    totalSessions: 12,
+    completedSessions: 0,
+    balance: Number(p.balance_due),
+  };
+}
+
+export function mapAppointment(a: any): import("./types").Appointment {
+  return {
+    id: a.id,
+    patientId: a.patient_id,
+    patientName: a.patient_name,
+    therapistId: a.therapist_id,
+    therapistName: a.therapist_name,
+    branchId: a.branch_id,
+    date: a.date,
+    time: a.time,
+    duration: a.duration,
+    type: a.type,
+    status: a.status,
+    notes: a.notes,
+  };
+}
+
+export function mapLead(l: any): import("./types").Lead {
+  return {
+    id: l.id,
+    name: l.name,
+    phone: l.phone,
+    email: l.email || "",
+    source: l.source,
+    stage: l.stage,
+    branchId: l.branch_id,
+    interest: l.interest || "",
+    value: Number(l.value),
+    notes: l.notes || "",
+    avatarColor: l.avatar_color,
+    createdAt: l.created_at,
+  };
+}
+
+export function mapInvoice(i: any): import("./types").Invoice {
+  return {
+    id: i.id,
+    invoiceNo: i.invoice_no,
+    patientId: i.patient_id,
+    patientName: i.patient_name,
+    branchId: i.branch_id,
+    date: i.date,
+    dueDate: i.due_date,
+    items: i.invoice_items?.map((item: any) => ({
+      id: item.id,
+      description: item.description,
+      qty: item.qty,
+      rate: Number(item.rate),
+      amount: Number(item.amount),
+    })) || [],
+    subtotal: Number(i.subtotal),
+    tax: Number(i.tax),
+    discount: Number(i.discount),
+    total: Number(i.total),
+    paid: Number(i.paid),
+    status: i.status,
+    paymentMethod: i.payment_method,
+  };
+}
+
+export function mapNotification(n: any): import("./types").Notification {
+  return {
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    message: n.message,
+    time: formatTimeAgo(n.created_at),
+    read: n.read,
+    priority: n.priority,
+  };
+}
+
+export function mapEmployee(e: any): import("./types").Employee {
+  return {
+    id: e.id,
+    name: e.name,
+    role: e.role,
+    department: e.department,
+    branchId: e.branch_id,
+    phone: e.phone,
+    email: e.email,
+    status: e.status,
+    shift: e.shift,
+    joinedOn: e.joined_on,
+    avatarColor: e.avatar_color,
+    salary: Number(e.salary),
+  };
+}
+
+export function mapTherapist(t: any): import("./types").Therapist {
+  return {
+    id: t.id,
+    name: t.name,
+    specialization: t.specialization,
+    branchId: t.branch_id,
+    patientsCount: t.patients_count,
+    rating: Number(t.rating),
+    experience: t.experience,
+    sessionsToday: t.sessions_today,
+    revenue: Number(t.revenue),
+    avatarColor: t.avatar_color,
+    status: t.status,
+    certifications: t.certifications || [],
+  };
+}
+
+export function mapAttendanceRecord(a: any): import("./types").AttendanceRecord {
+  return {
+    id: a.id,
+    employeeId: a.employee_id,
+    employeeName: a.employee_name,
+    date: a.date,
+    checkIn: a.check_in,
+    checkOut: a.check_out,
+    status: a.status,
+    method: a.method,
+  };
 }

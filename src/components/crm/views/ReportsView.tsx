@@ -9,11 +9,9 @@ import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend
 } from "recharts";
-import {
-  revenueData, monthlyRevenueData, branchComparisonData, leadSourceData,
-  appointmentStatusData, patientGrowthData, therapistPerformanceData, revenueForecastData,
-  branches
-} from "@/lib/data";
+import { branches } from "@/lib/data";
+import { useAnalytics } from "@/hooks/use-analytics";
+import { useAppStore } from "@/lib/store";
 import { ChartCard } from "../ChartCard";
 import { SectionHeader } from "../SectionHeader";
 import { AnimatedCounter } from "../AnimatedCounter";
@@ -22,6 +20,15 @@ import { cn, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF } from "@/li
 import { toast } from "sonner";
 
 export function ReportsView() {
+  const { currentBranchId } = useAppStore();
+  const {
+    monthlyRevenueData,
+    branchComparisonData,
+    leadSourceData,
+    appointmentStatusData,
+    therapistPerformanceData,
+    patientGrowthData,
+  } = useAnalytics(currentBranchId);
 
   function handleExportReport(name: string, fmt: "csv" | "excel" | "pdf") {
     const rows = monthlyRevenueData.map(d => ({
@@ -190,7 +197,7 @@ export function ReportsView() {
               <Tooltip contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 12, fontSize: 12 }} formatter={(v: number) => [`₹${v.toLocaleString("en-IN")}`, ""]} />
               <Bar dataKey="revenue" radius={[0, 8, 8, 0]} maxBarSize={24}>
                 {branchComparisonData.map((entry, i) => (
-                  <Cell key={i} fill={branches[i].color} />
+                  <Cell key={i} fill={entry.color || "#D6F04C"} />
                 ))}
               </Bar>
             </BarChart>

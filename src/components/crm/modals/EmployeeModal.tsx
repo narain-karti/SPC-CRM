@@ -4,9 +4,14 @@ import { useState } from "react";
 import { Modal } from "../Modal";
 import { Field, TextInput, SelectInput, Button } from "../Form";
 import { useAppStore } from "@/lib/store";
-import { branches } from "@/lib/data";
-import { uid, todayISO } from "@/lib/utils";
+import { todayISO } from "@/lib/utils";
 import { toast } from "sonner";
+import {
+  useBranches,
+  useCreateEmployee,
+  useCreateTherapist,
+  useCreateNotification,
+} from "@/hooks/use-supabase-query";
 import type { Employee, Therapist } from "@/lib/types";
 
 const avatarColors = ["#D6F04C", "#B79AFB", "#5EEAD4", "#FBBF24", "#F472B6", "#60A5FA", "#34D399", "#FB923C"];
@@ -18,12 +23,18 @@ interface Props {
 }
 
 export function EmployeeModal({ open, onOpenChange, type = "employee" }: Props) {
-  const { addEmployee, addTherapist, addNotification } = useAppStore();
+  const { currentBranchId } = useAppStore();
+  const { data: branches = [] } = useBranches();
+  
+  const createEmployee = useCreateEmployee();
+  const createTherapist = useCreateTherapist();
+  const createNotification = useCreateNotification();
+
   const [form, setForm] = useState({
     name: "",
     role: type === "therapist" ? "Physiotherapist" : "Receptionist",
     department: type === "therapist" ? "Clinical" : "Front Office",
-    branchId: branches[0].id,
+    branchId: branches.find(b => b.id === currentBranchId)?.id || branches[0]?.id || "",
     phone: "",
     email: "",
     shift: "9:00 AM - 6:00 PM",
@@ -53,60 +64,69 @@ export function EmployeeModal({ open, onOpenChange, type = "employee" }: Props) 
     }
 
     if (type === "therapist") {
-      const therapist: Therapist = {
-        id: uid("th"),
+      const payload = {
         name: form.name.trim().startsWith("Dr.") ? form.name.trim() : `Dr. ${form.name.trim()}`,
         specialization: form.specialization || "General Physiotherapy",
-        branchId: form.branchId,
+        branch_id: form.branchId,
         patients: 0,
         rating: 5.0,
         experience: Number(form.experience) || 1,
-        sessionsToday: 0,
+        sessions_today: 0,
         revenue: 0,
-        avatarColor: avatarColors[Math.floor(Math.random() * avatarColors.length)],
+        avatar_color: avatarColors[Math.floor(Math.random() * avatarColors.length)],
         status: "available",
         certifications: form.certifications.trim() ? form.certifications.split(",").map(c => c.trim()) : [],
       };
-      addTherapist(therapist);
-      addNotification({
-        id: uid("n"),
-        type: "registration",
-        title: "New therapist added",
-        message: `${therapist.name} joined ${branches.find(b => b.id === therapist.branchId)?.name}`,
-        time: "Just now",
-        read: false,
-        priority: "medium",
+      
+      createTherapist.mutate(payload as any, {
+        onSuccess: () => {
+          createNotification.mutate({
+            type: "registration",
+            title: "New therapist added",
+            message: `${payload.name} joined ${branches.find(b => b.id === payload.branch_id)?.name}`,
+            priority: "medium",
+          });
+          toast.success("Therapist added!", { description: payload.name });
+          onOpenChange(false);
+        },
+        onError: (error: any) => {
+          toast.error("Failed to add therapist", { description: error.message });
+        }
       });
-      toast.success("Therapist added!", { description: therapist.name });
     } else {
-      const employee: Employee = {
-        id: uid("em"),
+      const payload = {
         name: form.name.trim(),
         role: form.role,
         department: form.department,
-        branchId: form.branchId,
+        branch_id: form.branchId,
         phone: form.phone.trim(),
         email: form.email.trim(),
         status: "active",
         shift: form.shift,
-        joinedOn: todayISO(),
-        avatarColor: avatarColors[Math.floor(Math.random() * avatarColors.length)],
+        joined_on: todayISO(),
+        avatar_color: avatarColors[Math.floor(Math.random() * avatarColors.length)],
         salary: Number(form.salary) || 0,
       };
-      addEmployee(employee);
-      addNotification({
-        id: uid("n"),
-        type: "registration",
-        title: "New employee added",
-        message: `${employee.name} joined as ${employee.role}`,
-        time: "Just now",
-        read: false,
-        priority: "low",
+      
+      createEmployee.mutate(payload as any, {
+        onSuccess: () => {
+          createNotification.mutate({
+            type: "registration",
+            title: "New employee added",
+            message: `${payload.name} joined as ${payload.role}`,
+            priority: "low",
+          });
+          toast.success("Employee added!", { description: `${payload.name} · ${payload.role}` });
+          onOpenChange(false);
+        },
+        onError: (error: any) => {
+          toast.error("Failed to add employee", { description: error.message });
+        }
       });
-      toast.success("Employee added!", { description: `${employee.name} · ${employee.role}` });
     }
-    onOpenChange(false);
   }
+
+  const isPending = createEmployee.isPending || createTherapist.isPending;
 
   return (
     <Modal
@@ -118,19 +138,48 @@ export function EmployeeModal({ open, onOpenChange, type = "employee" }: Props) 
       footer={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="lime" onClick={submit}>Add {type === "therapist" ? "Therapist" : "Employee"}</Button>
+          <Button variant="lime" onClick={submit} disabled={isPending}>
+            {isPending ? "Adding..." : "Add Member"}
+          </Button>
         </>
       }
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Full Name" required error={errors.name} className="sm:col-span-2">
-          <TextInput value={form.name} onChange={e => update("name", e.target.value)} placeholder={type === "therapist" ? "Dr. Ananya Krishnan" : "Rajesh Kumar"} invalid={!!errors.name} />
+        <Field label="Full Name" required error={errors.name}>
+          <TextInput value={form.name} onChange={e => update("name", e.target.value)} placeholder="e.g. Sarah Smith" invalid={!!errors.name} />
         </Field>
+        <Field label="Phone" required error={errors.phone}>
+          <TextInput value={form.phone} onChange={e => update("phone", e.target.value)} placeholder="+91 98765 43210" invalid={!!errors.phone} />
+        </Field>
+        <Field label="Email" required error={errors.email}>
+          <TextInput type="email" value={form.email} onChange={e => update("email", e.target.value)} placeholder="sarah@example.com" invalid={!!errors.email} />
+        </Field>
+        
+        {type === "employee" && (
+          <Field label="Role">
+            <SelectInput
+              value={form.role}
+              onValueChange={(v) => update("role", v)}
+              options={[
+                { value: "Receptionist", label: "Receptionist" },
+                { value: "Branch Admin", label: "Branch Admin" },
+                { value: "Cleaner", label: "Cleaner" },
+                { value: "Accountant", label: "Accountant" },
+              ]}
+            />
+          </Field>
+        )}
+        
+        <Field label="Branch">
+          <SelectInput
+            value={form.branchId}
+            onValueChange={(v) => update("branchId", v)}
+            options={branches.map(b => ({ value: b.id, label: b.name }))}
+          />
+        </Field>
+
         {type === "therapist" ? (
           <>
-            <Field label="Specialization" required>
-              <TextInput value={form.specialization} onChange={e => update("specialization", e.target.value)} placeholder="e.g. Orthopedic & Sports Rehab" />
-            </Field>
             <Field label="Experience (years)">
               <TextInput type="number" value={form.experience} onChange={e => update("experience", e.target.value)} placeholder="e.g. 5" />
             </Field>

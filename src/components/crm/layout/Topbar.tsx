@@ -7,7 +7,7 @@ import {
   Check, Stethoscope, UserCog, Menu, X
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { branches } from "@/lib/data";
+import { useBranches, useNotifications } from "@/hooks/use-supabase-query";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Avatar } from "../Avatar";
@@ -27,8 +27,9 @@ export function Topbar() {
     theme, toggleTheme, setCommandOpen,
     currentRole, setRole, currentBranchId, setBranch, setView,
     setMobileSidebarOpen,
-    notifications,
   } = useAppStore();
+  const { data: branches = [] } = useBranches();
+  const { data: notifications = [] } = useNotifications();
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);

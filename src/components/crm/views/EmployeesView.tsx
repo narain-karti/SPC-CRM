@@ -13,18 +13,24 @@ import { StatusBadge } from "../StatusBadge";
 import { SectionHeader } from "../SectionHeader";
 import { Button } from "../Form";
 import { EmployeeModal } from "../modals/EmployeeModal";
-import { cn, formatINR, formatDate, exportToCSV, exportToExcel, exportToHTMLPDF } from "@/lib/utils";
+import { cn, formatINR, formatDate, exportToCSV, exportToExcel, exportToHTMLPDF, mapEmployee } from "@/lib/utils";
+import { useEmployees, useDeleteEmployee } from "@/hooks/use-supabase-query";
 import * as Popover from "@radix-ui/react-popover";
 import { toast } from "sonner";
 
 export function EmployeesView() {
-  const { employees, deleteEmployee, currentBranchId } = useAppStore();
+  const { currentBranchId } = useAppStore();
+  const { data: rawEmployees = [], isLoading } = useEmployees(currentBranchId);
+  const deleteEmployeeMutation = useDeleteEmployee();
+
+  const employees = useMemo(() => rawEmployees.map(mapEmployee), [rawEmployees]);
+  
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [showModal, setShowModal] = useState(false);
   const [showExport, setShowExport] = useState(false);
 
-  const departments = useMemo(() => Array.from(new Set(employees.map(e => e.department))), [employees]);
+  const departments = useMemo(() => Array.from(new Set(employees.map((e: any) => e.department))), [employees]);
 
   const filtered = useMemo(() => {
     return employees.filter(e => {
@@ -229,7 +235,7 @@ export function EmployeesView() {
                   <td className="px-4 py-3"><StatusBadge status={e.status} size="sm" /></td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      onClick={() => { deleteEmployee(e.id); toast.success("Employee removed"); }}
+                      onClick={() => deleteEmployeeMutation.mutate(e.id)}
                       className="opacity-0 group-hover:opacity-100 h-7 w-7 flex items-center justify-center rounded-lg hover:bg-rose-500/10 text-rose-500"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -278,7 +284,7 @@ export function EmployeesView() {
                 size="sm"
                 variant="outline"
                 className="mt-3 w-full text-rose-500"
-                onClick={() => { deleteEmployee(e.id); toast.success("Employee removed"); }}
+                onClick={() => deleteEmployeeMutation.mutate(e.id)}
               >
                 <Trash2 className="h-3.5 w-3.5" /> Remove
               </Button>
@@ -287,7 +293,12 @@ export function EmployeesView() {
         })}
       </div>
 
-      {filtered.length === 0 && (
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#D6F04C] border-t-transparent" />
+          <p className="mt-4 text-sm">Loading employees...</p>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="py-16 text-center">
           <UserCog className="h-12 w-12 mx-auto text-muted-foreground/40 mb-3" />
           <p className="text-sm text-muted-foreground">No employees found</p>
@@ -295,7 +306,7 @@ export function EmployeesView() {
             <Plus className="h-3.5 w-3.5" /> Add employee
           </Button>
         </div>
-      )}
+      ) : null}
 
       <EmployeeModal open={showModal} onOpenChange={setShowModal} />
     </div>

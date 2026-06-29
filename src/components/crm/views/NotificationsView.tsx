@@ -9,7 +9,8 @@ import {
 import { useAppStore } from "@/lib/store";
 import { SectionHeader } from "../SectionHeader";
 import { Button } from "../Form";
-import { cn } from "@/lib/utils";
+import { cn, mapNotification } from "@/lib/utils";
+import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from "@/hooks/use-supabase-query";
 
 const typeConfig: Record<string, { icon: React.ComponentType<{ className?: string }>; color: string; bg: string }> = {
   appointment: { icon: Calendar, color: "#60A5FA", bg: "bg-blue-500/10" },
@@ -22,7 +23,12 @@ const typeConfig: Record<string, { icon: React.ComponentType<{ className?: strin
 };
 
 export function NotificationsView() {
-  const { notifications, markNotificationRead, markAllNotificationsRead } = useAppStore();
+  const { data: rawNotifications = [], isLoading } = useNotifications();
+  const markReadMutation = useMarkNotificationRead();
+  const markAllReadMutation = useMarkAllNotificationsRead();
+  
+  const notifications = rawNotifications.map(mapNotification);
+  
   const [filter, setFilter] = useState("all");
 
   const filtered = notifications.filter(n => filter === "all" || (filter === "unread" && !n.read) || n.type === filter);
@@ -35,7 +41,7 @@ export function NotificationsView() {
         description={`${unreadCount} unread notifications`}
         icon={<Bell className="h-5 w-5" />}
         action={
-          <Button variant="outline" onClick={markAllNotificationsRead} disabled={unreadCount === 0}>
+          <Button variant="outline" onClick={() => markAllReadMutation.mutate()} disabled={unreadCount === 0 || markAllReadMutation.isPending}>
             <Check className="h-4 w-4" /> Mark all read
           </Button>
         }
@@ -73,7 +79,7 @@ export function NotificationsView() {
                   "group flex items-start gap-3 p-4 cursor-pointer transition-colors",
                   n.read ? "hover:bg-muted/40" : "bg-[#D6F04C]/[0.04] hover:bg-[#D6F04C]/[0.08]"
                 )}
-                onClick={() => !n.read && markNotificationRead(n.id)}
+                onClick={() => !n.read && markReadMutation.mutate(n.id)}
               >
                 <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl", cfg.bg)} style={{ color: cfg.color }}>
                   <Icon className="h-5 w-5" />
@@ -94,7 +100,12 @@ export function NotificationsView() {
           })}
         </div>
 
-        {filtered.length === 0 && (
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#D6F04C] border-t-transparent" />
+            <p className="mt-4 text-sm">Loading notifications...</p>
+          </div>
+        ) : filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16">
             <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-muted">
               <CheckCircle2 className="h-7 w-7 text-emerald-500" />

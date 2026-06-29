@@ -9,7 +9,8 @@ import {
   Pill, Image as ImageIcon, FileCheck2, MessageCircle, Edit, Share2,
   Video, CalendarPlus, Heart, Zap, ChevronRight, CheckCircle2, Star
 } from "lucide-react";
-import { patients as seedPatients, branches, therapists, timelineEvents, medicalRecords } from "@/lib/data";
+import { branches, therapists } from "@/lib/data";
+import { usePatient, useAppointments, useInvoices } from "@/hooks/use-supabase-query";
 import { useAppStore } from "@/lib/store";
 import { Avatar } from "../Avatar";
 import { StatusBadge } from "../StatusBadge";
@@ -18,19 +19,41 @@ import { AnimatedCounter } from "../AnimatedCounter";
 import { Button } from "../Form";
 import { AppointmentModal } from "../modals/AppointmentModal";
 import { InvoiceModal } from "../modals/InvoiceModal";
-import { cn, formatINR, formatDate, exportToHTMLPDF } from "@/lib/utils";
+import { cn, formatINR, formatDate, exportToHTMLPDF, mapPatient } from "@/lib/utils";
 import { toast } from "sonner";
-import { useState as useLocalState } from "react";
+import { useState as useLocalState, useMemo } from "react";
+import type { Patient, Appointment, Invoice, TimelineEvent, MedicalRecord } from "@/lib/types";
 
 type Tab = "overview" | "timeline" | "records" | "treatment" | "billing" | "notes";
 
 export function PatientDetailView() {
-  const { selectedPatientId, setView, currentRole, patients, invoices, appointments } = useAppStore();
+  const { selectedPatientId, setView, currentRole } = useAppStore();
   const [tab, setTab] = useState<Tab>("overview");
   const [showApptModal, setShowApptModal] = useLocalState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useLocalState(false);
 
-  const patient = patients.find(p => p.id === selectedPatientId);
+  // Fetch patient data from Supabase
+  const { data: patientData, isLoading: isLoadingPatient } = usePatient(selectedPatientId);
+  const patient = useMemo(() => patientData ? mapPatient(patientData) : null, [patientData]);
+
+  // Fetch related data
+  // Using branch="all" because we want all records for this specific patient
+  const { data: appointmentsData = [] } = useAppointments("all");
+  const { data: invoicesData = [] } = useInvoices("all");
+  
+  // Dummy data for now until we build hooks for these
+  const timelineEvents: TimelineEvent[] = [];
+  const medicalRecords: MedicalRecord[] = [];
+
+  if (isLoadingPatient) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#D6F04C] border-t-transparent" />
+        <p className="mt-4 text-sm">Loading patient profile...</p>
+      </div>
+    );
+  }
+
   if (!patient) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
@@ -42,8 +65,16 @@ export function PatientDetailView() {
 
   const branch = branches.find(b => b.id === patient.branchId);
   const therapist = therapists.find(t => t.id === patient.therapistId);
-  const patientInvoices = invoices.filter(i => i.patientId === patient.id);
-  const patientAppointments = appointments.filter(a => a.patientId === patient.id);
+  
+  // Map Supabase related data
+  // Note: Assuming a simple map for now to fit the UI. If appointments and invoices have complex types, we may need mapAppointment/mapInvoice
+  const patientInvoices = invoicesData
+    .filter((i: any) => i.patient_id === patient.id)
+    .map((i: any) => ({ ...i, invoiceNo: i.invoice_no, dueDate: i.due_date, patientId: i.patient_id })) as Invoice[];
+    
+  const patientAppointments = appointmentsData
+    .filter((a: any) => a.patient_id === patient.id)
+    .map((a: any) => ({ ...a, patientId: a.patient_id, therapistId: a.therapist_id, patientName: a.patient_name, therapistName: a.therapist_name })) as Appointment[];
 
   const tabs: { key: Tab; label: string; icon: React.ComponentType<{ className?: string }>; badge?: number }[] = [
     { key: "overview", label: "Overview", icon: ClipboardList },

@@ -9,7 +9,9 @@ import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, RadialBarChart, RadialBar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ScatterChart, Scatter, ZAxis
 } from "recharts";
-import { revenueForecastData, monthlyRevenueData, branchComparisonData, branches, therapists } from "@/lib/data";
+import { revenueForecastData } from "@/lib/data"; // Forecast is still static for demo
+import { useAnalytics } from "@/hooks/use-analytics";
+import { useAppStore } from "@/lib/store";
 import { ChartCard } from "../ChartCard";
 import { SectionHeader } from "../SectionHeader";
 import { AnimatedCounter } from "../AnimatedCounter";
@@ -17,6 +19,17 @@ import { Avatar } from "../Avatar";
 import { cn } from "@/lib/utils";
 
 export function AnalyticsView() {
+  const { currentBranchId } = useAppStore();
+  const {
+    monthlyRevenueData,
+    branchComparisonData,
+    leadSourceData,
+    appointmentStatusData,
+    therapistPerformanceData,
+    patientGrowthData,
+    kpis
+  } = useAnalytics(currentBranchId);
+
   return (
     <div className="space-y-5">
       <SectionHeader
@@ -63,10 +76,10 @@ export function AnalyticsView() {
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: "Avg Revenue/Patient", value: 10203, prefix: "₹", change: 12, icon: IndianRupee, color: "#D6F04C" },
-          { label: "Retention Rate", value: 87, suffix: "%", change: 4, icon: Users, color: "#B79AFB" },
-          { label: "Avg Sessions/Patient", value: 14, change: 8, icon: Calendar, color: "#34D399" },
-          { label: "Conversion Rate", value: 38, suffix: "%", change: 5, icon: Target, color: "#FBBF24" },
+          { label: "Avg Revenue/Patient", value: kpis.avgRevenue, prefix: "₹", change: 12, icon: IndianRupee, color: "#D6F04C" },
+          { label: "Retention Rate", value: kpis.retentionRate, suffix: "%", change: 4, icon: Users, color: "#B79AFB" },
+          { label: "Avg Sessions/Patient", value: kpis.avgSessions, change: 8, icon: Calendar, color: "#34D399" },
+          { label: "Conversion Rate", value: kpis.conversionRate, suffix: "%", change: 5, icon: Target, color: "#FBBF24" },
         ].map((s, i) => {
           const Icon = s.icon;
           return (

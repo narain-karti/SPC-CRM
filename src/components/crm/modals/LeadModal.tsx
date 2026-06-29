@@ -4,12 +4,10 @@ import { useState } from "react";
 import { Modal } from "../Modal";
 import { Field, TextInput, TextArea, SelectInput, Button } from "../Form";
 import { useAppStore } from "@/lib/store";
-import { branches } from "@/lib/data";
-import { uid, todayISO } from "@/lib/utils";
+import { todayISO } from "@/lib/utils";
 import { toast } from "sonner";
+import { useBranches, useCreateLead, useCreateNotification } from "@/hooks/use-supabase-query";
 import type { Lead } from "@/lib/types";
-
-const avatarColors = ["#D6F04C", "#B79AFB", "#5EEAD4", "#FBBF24", "#F472B6", "#60A5FA", "#34D399", "#FB923C"];
 
 interface Props {
   open: boolean;
@@ -17,14 +15,18 @@ interface Props {
 }
 
 export function LeadModal({ open, onOpenChange }: Props) {
-  const { addLead, addNotification } = useAppStore();
+  const { currentBranchId } = useAppStore();
+  const { data: branches = [] } = useBranches();
+  const createLead = useCreateLead();
+  const createNotification = useCreateNotification();
+
   const [form, setForm] = useState({
     name: "",
     phone: "",
     email: "",
-    source: "walk_in" as Lead["source"],
-    stage: "new" as Lead["stage"],
-    branchId: branches[0].id,
+    source: "walk_in",
+    stage: "new",
+    branchId: branches.find(b => b.id === currentBranchId)?.id || branches[0]?.id || "",
     interest: "",
     value: "",
     notes: "",
@@ -46,37 +48,39 @@ export function LeadModal({ open, onOpenChange }: Props) {
       toast.error("Please fill all required fields");
       return;
     }
-    const lead: Lead = {
-      id: uid("ld"),
+    
+    const payload = {
       name: form.name.trim(),
       phone: form.phone.trim(),
-      email: form.email.trim(),
+      email: form.email.trim() || null,
       source: form.source,
       stage: form.stage,
-      branchId: form.branchId,
+      branch_id: form.branchId,
       interest: form.interest.trim(),
       value: Number(form.value) || 0,
-      createdAt: todayISO(),
-      notes: form.notes.trim(),
-      avatarColor: avatarColors[Math.floor(Math.random() * avatarColors.length)],
+      notes: form.notes.trim() || null,
     };
-    addLead(lead);
-    addNotification({
-      id: uid("n"),
-      type: "registration",
-      title: "New lead added",
-      message: `${lead.name} added as new lead (${lead.source})`,
-      time: "Just now",
-      read: false,
-      priority: "medium",
-    });
-    toast.success("Lead added to pipeline!", {
-      description: `${lead.name} · ${branches.find(b => b.id === lead.branchId)?.name}`,
-    });
-    onOpenChange(false);
-    setForm({
-      name: "", phone: "", email: "", source: "walk_in", stage: "new",
-      branchId: branches[0].id, interest: "", value: "", notes: "",
+
+    createLead.mutate(payload as any, {
+      onSuccess: () => {
+        createNotification.mutate({
+          type: "registration",
+          title: "New lead added",
+          message: `${payload.name} added as new lead (${payload.source})`,
+          priority: "medium",
+        });
+        toast.success("Lead added to pipeline!", {
+          description: `${payload.name} · ${branches.find(b => b.id === payload.branch_id)?.name}`,
+        });
+        onOpenChange(false);
+        setForm({
+          name: "", phone: "", email: "", source: "walk_in", stage: "new",
+          branchId: form.branchId, interest: "", value: "", notes: "",
+        });
+      },
+      onError: (error: any) => {
+        toast.error("Failed to add lead", { description: error.message });
+      }
     });
   }
 
@@ -90,7 +94,9 @@ export function LeadModal({ open, onOpenChange }: Props) {
       footer={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="lime" onClick={submit}>Add Lead</Button>
+          <Button variant="lime" onClick={submit} disabled={createLead.isPending}>
+            {createLead.isPending ? "Adding..." : "Add Lead"}
+          </Button>
         </>
       }
     >

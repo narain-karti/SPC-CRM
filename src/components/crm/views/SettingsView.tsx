@@ -6,11 +6,11 @@ import {
   Settings as SettingsIcon, Building2, Users, Bell, Shield, CreditCard,
   MessageCircle, Globe, Palette, Database, ChevronRight, Check, Crown
 } from "lucide-react";
-import { branches } from "@/lib/data";
 import { Avatar } from "../Avatar";
 import { SectionHeader } from "../SectionHeader";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { useBranches } from "@/hooks/use-supabase-query";
 
 const sections = [
   { key: "general", label: "General", icon: SettingsIcon, color: "#D6F04C" },
@@ -139,6 +139,8 @@ function GeneralSection() {
 }
 
 function BranchesSection() {
+  const { data: branches = [], isLoading } = useBranches();
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
@@ -149,7 +151,9 @@ function BranchesSection() {
         <button className="rounded-xl bg-gradient-to-br from-[#D6F04C] to-[#A3C128] px-3 py-2 text-xs font-semibold text-[#0F1117]">+ Add Branch</button>
       </div>
       <div className="space-y-2">
-        {branches.map((b, i) => (
+        {isLoading ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">Loading branches...</div>
+        ) : branches.map((b: any, i: number) => (
           <motion.div
             key={b.id}
             initial={{ opacity: 0, y: 8 }}
@@ -166,15 +170,15 @@ function BranchesSection() {
             </div>
             <div className="hidden md:flex items-center gap-6 text-xs">
               <div className="text-center">
-                <div className="font-semibold tabular-nums">{b.patients}</div>
+                <div className="font-semibold tabular-nums">—</div>
                 <div className="text-[10px] text-muted-foreground">patients</div>
               </div>
               <div className="text-center">
-                <div className="font-semibold tabular-nums">{b.staff}</div>
+                <div className="font-semibold tabular-nums">—</div>
                 <div className="text-[10px] text-muted-foreground">staff</div>
               </div>
               <div className="text-center">
-                <div className="font-semibold tabular-nums">₹{(b.revenue / 100000).toFixed(1)}L</div>
+                <div className="font-semibold tabular-nums">—</div>
                 <div className="text-[10px] text-muted-foreground">revenue</div>
               </div>
             </div>

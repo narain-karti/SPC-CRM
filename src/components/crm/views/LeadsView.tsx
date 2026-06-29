@@ -13,7 +13,8 @@ import { SectionHeader } from "../SectionHeader";
 import { AnimatedCounter } from "../AnimatedCounter";
 import { Button } from "../Form";
 import { LeadModal } from "../modals/LeadModal";
-import { cn, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF, uid } from "@/lib/utils";
+import { cn, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF, uid, mapLead } from "@/lib/utils";
+import { useLeads, useUpdateLead, useDeleteLead } from "@/hooks/use-supabase-query";
 import * as Popover from "@radix-ui/react-popover";
 import { toast } from "sonner";
 import type { LeadStage, Lead } from "@/lib/types";
@@ -38,22 +39,25 @@ const sourceIcons: Record<string, React.ReactNode> = {
 };
 
 export function LeadsView() {
-  const { leads, updateLead, deleteLead, addPatient, addNotification, currentBranchId } = useAppStore();
+  const { addPatient, addNotification, currentBranchId } = useAppStore();
+  const { data: rawLeads = [], isLoading } = useLeads(currentBranchId);
+  const updateLeadMutation = useUpdateLead();
+  const deleteLeadMutation = useDeleteLead();
+  
+  const leads = useMemo(() => rawLeads.map(mapLead), [rawLeads]);
+  
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showExport, setShowExport] = useState(false);
 
-  const filteredLeads = useMemo(() => {
-    if (currentBranchId === "all") return leads;
-    return leads.filter(l => l.branchId === currentBranchId);
-  }, [leads, currentBranchId]);
+  const filteredLeads = leads; // Already filtered by branch in the query
 
   function onDragStart(id: string) { setDraggedId(id); }
   function onDrop(stage: LeadStage) {
     if (!draggedId) return;
     const lead = leads.find(l => l.id === draggedId);
     if (!lead) return;
-    updateLead(draggedId, { stage });
+    updateLeadMutation.mutate({ id: draggedId, updates: { stage } });
     if (stage === "converted") {
       addNotification({
         id: uid("n"),
@@ -103,7 +107,7 @@ export function LeadsView() {
       completedSessions: 0,
       balance: 0,
     });
-    updateLead(lead.id, { stage: "converted" });
+    updateLeadMutation.mutate({ id: lead.id, updates: { stage: "converted" } });
     toast.success(`${lead.name} converted to patient!`);
   }
 
@@ -229,75 +233,78 @@ export function LeadsView() {
       {/* Kanban Board */}
       <div className="overflow-x-auto scrollbar-premium pb-2">
         <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3 min-w-[800px] sm:min-w-0">
-          {stageOrder.map(stage => {
-            const stageLeads = filteredLeads.filter(l => l.stage === stage);
-            const stageValue = stageLeads.reduce((s, l) => s + l.value, 0);
-            const config = stageConfig[stage];
-            return (
-              <div
-                key={stage}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => onDrop(stage)}
-                className="rounded-2xl bg-muted/30 ring-1 ring-border p-3 min-h-[200px]"
-              >
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ background: config.color }} />
-                    <span className="text-xs font-semibold">{config.label}</span>
-                    <span className="text-[10px] text-muted-foreground">({stageLeads.length})</span>
+          {isLoading ? (
+            <div className="col-span-full py-20 text-center text-muted-foreground">Loading leads...</div>
+          ) : (
+            stageOrder.map(stage => {
+              const stageLeads = filteredLeads.filter(l => l.stage === stage);
+              const stageValue = stageLeads.reduce((s, l) => s + l.value, 0);
+              const config = stageConfig[stage];
+              return (
+                <div
+                  key={stage}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => onDrop(stage)}
+                  className="rounded-2xl bg-muted/30 ring-1 ring-border p-3 min-h-[200px]"
+                >
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full" style={{ background: config.color }} />
+                      <span className="text-xs font-semibold">{config.label}</span>
+                      <span className="text-[10px] text-muted-foreground">({stageLeads.length})</span>
+                    </div>
                   </div>
-                </div>
-                <div className="text-[10px] text-muted-foreground px-1 mb-2">{formatINR(stageValue)}</div>
-                <div className="space-y-2">
-                  <AnimatePresence>
-                    {stageLeads.map((lead, i) => (
-                      <motion.div
-                        key={lead.id}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        transition={{ delay: i * 0.04 }}
-                        draggable
-                        onDragStart={() => onDragStart(lead.id)}
-                        className="group rounded-xl bg-card p-3 ring-1 ring-border hover:ring-foreground/20 cursor-grab active:cursor-grabbing"
-                      >
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <Avatar name={lead.name} color={lead.avatarColor} size="sm" />
-                          <Popover.Root>
-                            <Popover.Trigger asChild>
-                              <button className="opacity-0 group-hover:opacity-100 h-6 w-6 flex items-center justify-center rounded-md hover:bg-muted">
-                                <MoreHorizontal className="h-3 w-3" />
-                              </button>
-                            </Popover.Trigger>
-                            <Popover.Portal>
-                              <Popover.Content align="end" sideOffset={4} className="z-50 w-44 rounded-xl bg-popover p-1.5 premium-shadow-lg ring-1 ring-border">
-                                {stage !== "converted" && (
-                                  <button
-                                    onClick={() => convertToPatient(lead)}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-muted"
-                                  >
-                                    <UserPlus className="h-3.5 w-3.5" /> Convert to Patient
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => { deleteLead(lead.id); toast.success("Lead deleted"); }}
-                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs hover:bg-rose-500/10 text-rose-500"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                  <div className="text-[10px] text-muted-foreground px-1 mb-2">{formatINR(stageValue)}</div>
+                  <div className="space-y-2">
+                    <AnimatePresence>
+                      {stageLeads.map((lead, i) => (
+                        <motion.div
+                          key={lead.id}
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ delay: i * 0.04 }}
+                          draggable
+                          onDragStart={() => onDragStart(lead.id)}
+                          className="group rounded-xl bg-card p-3 ring-1 ring-border hover:ring-foreground/20 cursor-grab active:cursor-grabbing"
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <Avatar name={lead.name} color={lead.avatarColor} size="sm" />
+                            <Popover.Root>
+                              <Popover.Trigger asChild>
+                                <button className="h-6 w-6 flex items-center justify-center rounded bg-background/50 hover:bg-muted text-muted-foreground hover:text-foreground">
+                                  <MoreHorizontal className="h-3.5 w-3.5" />
                                 </button>
-                              </Popover.Content>
-                            </Popover.Portal>
-                          </Popover.Root>
-                        </div>
-                        <div className="text-sm font-semibold text-foreground mb-0.5">{lead.name}</div>
-                        <div className="text-[11px] text-muted-foreground mb-2 truncate">{lead.interest}</div>
-                        <div className="flex items-center justify-between">
-                          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                            {sourceIcons[lead.source]}
-                            {lead.source.replace("_", " ")}
-                          </span>
-                          <span className="text-xs font-bold" style={{ color: config.color }}>{formatINR(lead.value)}</span>
-                        </div>
+                              </Popover.Trigger>
+                              <Popover.Portal>
+                                <Popover.Content align="end" sideOffset={4} className="z-50 w-40 rounded-xl bg-popover p-1.5 shadow-xl ring-1 ring-border">
+                                  {stage !== "converted" && (
+                                    <button
+                                      onClick={() => convertToPatient(lead)}
+                                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-emerald-600 hover:bg-emerald-500/10"
+                                    >
+                                      <UserPlus className="h-3.5 w-3.5" /> Convert to Patient
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => deleteLeadMutation.mutate(lead.id)}
+                                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-rose-500 hover:bg-rose-500/10"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" /> Delete Lead
+                                  </button>
+                                </Popover.Content>
+                              </Popover.Portal>
+                            </Popover.Root>
+                          </div>
+                          <div className="text-sm font-semibold text-foreground mb-0.5">{lead.name}</div>
+                          <div className="text-[11px] text-muted-foreground mb-2 truncate">{lead.interest}</div>
+                          <div className="flex items-center justify-between">
+                            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                              {sourceIcons[lead.source]}
+                              {lead.source.replace("_", " ")}
+                            </span>
+                            <span className="text-xs font-bold" style={{ color: config.color }}>{formatINR(lead.value)}</span>
+                          </div>
                         {lead.notes && (
                           <p className="mt-2 pt-2 border-t border-border/40 text-[10px] text-muted-foreground line-clamp-2 italic">"{lead.notes}"</p>
                         )}
@@ -312,7 +319,7 @@ export function LeadsView() {
                 </div>
               </div>
             );
-          })}
+          }))}
         </div>
       </div>
 

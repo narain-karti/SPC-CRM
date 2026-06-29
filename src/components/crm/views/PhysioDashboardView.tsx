@@ -12,6 +12,7 @@ import { Avatar } from "../Avatar";
 import { StatusBadge } from "../StatusBadge";
 import { SectionHeader } from "../SectionHeader";
 import { AnimatedCounter } from "../AnimatedCounter";
+import { useAppointments, usePatients } from "@/hooks/use-supabase-query";
 import { Button, Field, TextInput, TextArea, SelectInput } from "../Form";
 import { Modal } from "../Modal";
 import { cn, formatINR, formatDate, uid, todayISO } from "@/lib/utils";
@@ -80,7 +81,9 @@ const initialPrescriptions: Prescription[] = [
 ];
 
 export function PhysioDashboardView() {
-  const { patients, appointments, openPatient, setView, currentRole } = useAppStore();
+  const { openPatient, setView, currentRole } = useAppStore();
+  const { data: appointments = [] } = useAppointments("all");
+  const { data: patients = [] } = usePatients("all");
   const [tab, setTab] = useState<"schedule" | "notes" | "prescriptions" | "patients">("schedule");
   const [sessionNotes, setSessionNotes] = useState<SessionNote[]>(initialSessionNotes);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>(initialPrescriptions);
@@ -89,8 +92,10 @@ export function PhysioDashboardView() {
   const [selectedNote, setSelectedNote] = useState<SessionNote | null>(null);
   const [selectedRx, setSelectedRx] = useState<Prescription | null>(null);
 
-  const todayAppts = appointments.filter(a => a.date === appointments[0]?.date).slice(0, 8);
-  const myPatients = patients.slice(0, 12);
+  const today = new Date().toISOString().split("T")[0];
+  const todayAppts = appointments.filter((a: any) => a.date === today);
+  const myPatients = patients.filter((p: any) => p.status === "active").slice(0, 12);
+  const myPatientsCount = patients.filter((p: any) => p.status === "active").length;
 
   return (
     <div className="space-y-5">
@@ -120,13 +125,13 @@ export function PhysioDashboardView() {
             <div>
               <div className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">My Patients</div>
               <div className="mt-1 text-2xl font-semibold text-[#D6F04C]">
-                <AnimatedCounter value={42} />
+                <AnimatedCounter value={myPatientsCount} />
               </div>
             </div>
             <div className="hidden md:block">
               <div className="text-[10px] uppercase tracking-wider text-white/40 font-semibold">Sessions Today</div>
               <div className="mt-1 text-2xl font-semibold text-[#B79AFB]">
-                <AnimatedCounter value={9} />
+                <AnimatedCounter value={todayAppts.length} />
               </div>
             </div>
             <div className="hidden md:block">
@@ -140,8 +145,8 @@ export function PhysioDashboardView() {
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Today's Sessions", value: 9, icon: Calendar, color: "#D6F04C" },
-          { label: "Active Patients", value: 42, icon: Users, color: "#B79AFB" },
+          { label: "Today's Sessions", value: todayAppts.length, icon: Calendar, color: "#D6F04C" },
+          { label: "Active Patients", value: myPatientsCount, icon: Users, color: "#B79AFB" },
           { label: "Notes Pending", value: 3, icon: FileText, color: "#FBBF24" },
           { label: "Prescriptions Issued", value: 18, icon: Pill, color: "#34D399" },
         ].map((k, i) => {

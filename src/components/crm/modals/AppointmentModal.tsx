@@ -3,11 +3,17 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
 import { Field, TextInput, TextArea, SelectInput, Button } from "../Form";
-import { useAppStore } from "@/lib/store";
-import { branches, therapists } from "@/lib/data";
-import { uid, todayISO, cn } from "@/lib/utils";
+import { todayISO, cn } from "@/lib/utils";
 import { toast } from "sonner";
-import type { Appointment } from "@/lib/types";
+import {
+  usePatients,
+  useAppointments,
+  useBranches,
+  useTherapists,
+  useCreateAppointment,
+  useCreateNotification,
+} from "@/hooks/use-supabase-query";
+import { useAppStore } from "@/lib/store";
 
 interface Props {
   open: boolean;
@@ -16,15 +22,23 @@ interface Props {
 }
 
 export function AppointmentModal({ open, onOpenChange, presetPatientId }: Props) {
-  const { patients, appointments, addAppointment, addNotification } = useAppStore();
+  const { currentBranchId } = useAppStore();
+  const { data: rawPatients = [] } = usePatients(currentBranchId);
+  const { data: rawAppointments = [] } = useAppointments(currentBranchId);
+  const { data: branches = [] } = useBranches();
+  const { data: therapists = [] } = useTherapists(currentBranchId);
+
+  const createAppointment = useCreateAppointment();
+  const createNotification = useCreateNotification();
+
   const [form, setForm] = useState({
-    patientId: presetPatientId || patients[0]?.id || "",
-    therapistId: therapists[0].id,
-    branchId: branches[0].id,
+    patientId: presetPatientId || (rawPatients[0]?.id || ""),
+    therapistId: therapists[0]?.id || "",
+    branchId: branches.find(b => b.id === currentBranchId)?.id || branches[0]?.id || "",
     date: todayISO(),
     time: "10:00",
     duration: "30",
-    type: "consultation" as Appointment["type"],
+    type: "consultation",
     notes: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -39,22 +53,23 @@ export function AppointmentModal({ open, onOpenChange, presetPatientId }: Props)
     if (!form.patientId) e.patientId = "Patient is required";
     if (!form.date) e.date = "Date is required";
     if (!form.time) e.time = "Time is required";
+    if (!form.therapistId) e.therapistId = "Therapist is required";
     setErrors(e);
     if (Object.keys(e).length) {
       toast.error("Please fill all required fields");
       return;
     }
-    const patient = patients.find(p => p.id === form.patientId);
+    const patient = rawPatients.find(p => p.id === form.patientId);
     const therapist = therapists.find(t => t.id === form.therapistId);
     if (!patient || !therapist) {
       toast.error("Invalid patient or therapist");
       return;
     }
     // Check conflict
-    const conflict = appointments.find(a =>
-      a.therapistId === form.therapistId &&
+    const conflict = rawAppointments.find(a =>
+      a.therapist_id === form.therapistId &&
       a.date === form.date &&
-      a.time === form.time &&
+      a.time.startsWith(form.time) &&
       a.status !== "cancelled"
     );
     if (conflict) {
@@ -62,34 +77,36 @@ export function AppointmentModal({ open, onOpenChange, presetPatientId }: Props)
       return;
     }
 
-    const appt: Appointment = {
-      id: uid("ap"),
-      patientId: patient.id,
-      patientName: patient.name,
-      therapistId: therapist.id,
-      therapistName: therapist.name,
-      branchId: form.branchId,
+    const payload = {
+      patient_id: patient.id,
+      therapist_id: therapist.id,
+      branch_id: form.branchId,
       date: form.date,
-      time: form.time,
+      time: `${form.time}:00`,
       duration: Number(form.duration),
-      type: form.type,
+      type: form.type as any,
       status: "scheduled",
-      notes: form.notes.trim() || undefined,
+      notes: form.notes.trim() || null,
     };
-    addAppointment(appt);
-    addNotification({
-      id: uid("n"),
-      type: "appointment",
-      title: "New appointment booked",
-      message: `${patient.name} booked ${form.type} at ${form.time} with ${therapist.name}`,
-      time: "Just now",
-      read: false,
-      priority: "high",
+
+    createAppointment.mutate(payload, {
+      onSuccess: () => {
+        createNotification.mutate({
+          type: "appointment",
+          title: "New appointment booked",
+          message: `${patient.name} booked ${form.type} at ${form.time} with ${therapist.name}`,
+          priority: "high"
+        });
+        
+        toast.success("Appointment scheduled!", {
+          description: `${patient.name} · ${form.date} at ${form.time}`,
+        });
+        onOpenChange(false);
+      },
+      onError: (error: any) => {
+        toast.error("Failed to schedule appointment", { description: error.message });
+      }
     });
-    toast.success("Appointment scheduled!", {
-      description: `${patient.name} · ${form.date} at ${form.time}`,
-    });
-    onOpenChange(false);
   }
 
   return (
@@ -102,7 +119,9 @@ export function AppointmentModal({ open, onOpenChange, presetPatientId }: Props)
       footer={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="lime" onClick={submit}>Schedule Appointment</Button>
+          <Button variant="lime" onClick={submit} disabled={createAppointment.isPending}>
+            {createAppointment.isPending ? "Scheduling..." : "Schedule Appointment"}
+          </Button>
         </>
       }
     >
@@ -111,7 +130,7 @@ export function AppointmentModal({ open, onOpenChange, presetPatientId }: Props)
           <SelectInput
             value={form.patientId}
             onValueChange={(v) => update("patientId", v)}
-            options={patients.map(p => ({ value: p.id, label: `${p.name} (${p.patientId})` }))}
+            options={rawPatients.map(p => ({ value: p.id, label: `${p.name} (${p.patient_id_code})` }))}
             invalid={!!errors.patientId}
           />
         </Field>
@@ -140,17 +159,18 @@ export function AppointmentModal({ open, onOpenChange, presetPatientId }: Props)
             value={form.duration}
             onValueChange={(v) => update("duration", v)}
             options={[
-              { value: "30", label: "30 min" },
-              { value: "45", label: "45 min" },
-              { value: "60", label: "60 min" },
-              { value: "90", label: "90 min" },
+              { value: "15", label: "15 mins" },
+              { value: "30", label: "30 mins" },
+              { value: "45", label: "45 mins" },
+              { value: "60", label: "1 hour" },
+              { value: "90", label: "1.5 hours" },
             ]}
           />
         </Field>
-        <Field label="Appointment Type">
+        <Field label="Type">
           <SelectInput
             value={form.type}
-            onValueChange={(v) => update("type", v as Appointment["type"])}
+            onValueChange={(v) => update("type", v as any)}
             options={[
               { value: "consultation", label: "Consultation" },
               { value: "therapy", label: "Therapy Session" },
@@ -159,11 +179,12 @@ export function AppointmentModal({ open, onOpenChange, presetPatientId }: Props)
             ]}
           />
         </Field>
-        <Field label="Notes" className="sm:col-span-2">
+        <Field label="Notes (Optional)" className="sm:col-span-2">
           <TextArea
             value={form.notes}
             onChange={e => update("notes", e.target.value)}
-            placeholder="Optional notes for the therapist"
+            placeholder="Add any specific requirements or notes for the therapist..."
+            className="min-h-[80px]"
           />
         </Field>
       </div>

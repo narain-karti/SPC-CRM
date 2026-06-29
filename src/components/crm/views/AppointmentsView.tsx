@@ -14,15 +14,24 @@ import { StatusBadge } from "../StatusBadge";
 import { SectionHeader } from "../SectionHeader";
 import { Button } from "../Form";
 import { AppointmentModal } from "../modals/AppointmentModal";
-import { cn, formatDate, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF } from "@/lib/utils";
+import { cn, formatDate, formatINR, exportToCSV, exportToExcel, exportToHTMLPDF, mapAppointment } from "@/lib/utils";
 import * as Popover from "@radix-ui/react-popover";
+import { useAppointments, useDeleteAppointment, useUpdateAppointment } from "@/hooks/use-supabase-query";
 import { toast } from "sonner";
 import type { AppointmentStatus } from "@/lib/types";
 
 type ViewMode = "list" | "day" | "week";
 
 export function AppointmentsView() {
-  const { appointments, openPatient, updateAppointment, deleteAppointment, currentBranchId } = useAppStore();
+  const { openPatient, currentBranchId } = useAppStore();
+  const { data: rawAppointments = [], isLoading } = useAppointments(currentBranchId);
+  const deleteApptMutation = useDeleteAppointment();
+  const updateApptMutation = useUpdateAppointment();
+  
+  const appointments = useMemo(() => {
+    return rawAppointments.map(mapAppointment);
+  }, [rawAppointments]);
+
   const [mode, setMode] = useState<ViewMode>("list");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -50,13 +59,11 @@ export function AppointmentsView() {
   }, [filtered]);
 
   function setStatus(id: string, status: AppointmentStatus) {
-    updateAppointment(id, { status });
-    toast.success(`Appointment marked as ${status.replace("_", " ")}`);
+    updateApptMutation.mutate({ id, updates: { status } });
   }
 
   function handleDelete(id: string) {
-    deleteAppointment(id);
-    toast.success("Appointment deleted");
+    deleteApptMutation.mutate(id);
   }
 
   function handleExportCSV() {
@@ -230,7 +237,12 @@ export function AppointmentsView() {
       </div>
 
       {/* List view */}
-      {mode === "list" && (
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#D6F04C] border-t-transparent" />
+            <p className="mt-4 text-sm">Loading appointments from database...</p>
+          </div>
+        ) : mode === "list" ? (
         <div className="space-y-6">
           {Object.entries(groupedByDate).map(([date, appts]) => (
             <div key={date}>
@@ -263,7 +275,7 @@ export function AppointmentsView() {
             </div>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* Day view */}
       {mode === "day" && (
