@@ -1,0 +1,8 @@
+{
+  "name": "Stability Physio Care",
+  "description": "Professional physiotherapy, sports injury rehabilitation, manual therapy, home care, assisted living, and digital consultation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

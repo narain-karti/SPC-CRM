@@ -178,9 +178,9 @@ function SidebarContent(props: {
       <div className="flex items-center gap-3 px-4 pt-5 pb-4">
         <motion.div
           whileHover={{ rotate: 8, scale: 1.05 }}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#D6F04C] to-[#A3C128] shadow-[0_8px_24px_-6px_rgba(214,240,76,0.5)]"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white p-1.5 shadow-[0_8px_24px_-6px_rgba(214,240,76,0.5)]"
         >
-          <Sparkles className="h-5 w-5 text-[#0F1117]" strokeWidth={2.5} />
+          <img src="/logo.png" className="h-full w-full object-contain" alt="Logo" />
         </motion.div>
         <AnimatePresence>
           {!collapsed && (

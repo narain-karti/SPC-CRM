@@ -41,8 +41,8 @@ export function useAnalytics(branchId?: string) {
         patients: bPatients.length,
         satisfaction: 95, // mock
         color: b.color || "#D6F04C",
-        staff: Math.floor(Math.random() * 10) + 5, // mock
-        growth: Math.floor(Math.random() * 20) - 5 // mock
+        staff: b.name.length * 2, // deterministic mock
+        growth: b.name.length * 3 - 10 // deterministic mock
       };
     });
 

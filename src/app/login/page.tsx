@@ -52,8 +52,8 @@ export default function LoginPage() {
             animate={{ opacity: 1, y: 0 }}
             className="flex items-center gap-3 mb-16"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#D6F04C] to-[#A3C128] shadow-[0_8px_32px_-6px_rgba(214,240,76,0.5)]">
-              <Sparkles className="h-6 w-6 text-[#0F1117]" strokeWidth={2.5} />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white p-2 shadow-[0_8px_32px_-6px_rgba(214,240,76,0.5)]">
+              <img src="/logo.png" className="h-full w-full object-contain" alt="Logo" />
             </div>
             <div>
               <div className="text-lg font-semibold text-white tracking-tight">Stability</div>
@@ -113,8 +113,8 @@ export default function LoginPage() {
         >
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3 mb-8">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#D6F04C] to-[#A3C128]">
-              <Sparkles className="h-5 w-5 text-[#0F1117]" strokeWidth={2.5} />
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white p-1.5">
+              <img src="/logo.png" className="h-full w-full object-contain" alt="Logo" />
             </div>
             <div>
               <div className="text-base font-semibold tracking-tight">Stability Physio Care</div>
