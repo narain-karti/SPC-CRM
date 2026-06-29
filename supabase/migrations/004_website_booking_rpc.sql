@@ -24,20 +24,14 @@ DECLARE
   v_patient_id UUID;
   v_appointment_id UUID;
 BEGIN
-  -- 1. Get default Organization
-  SELECT id INTO v_org_id FROM organizations LIMIT 1;
-  IF v_org_id IS NULL THEN
-    RETURN json_build_object('success', false, 'error', 'No organization found.');
-  END IF;
-
-  -- 2 & 3. Get default Therapist and their Branch
-  SELECT id, name, branch_id INTO v_therapist_id, v_therapist_name, v_branch_id 
+  -- 1. Find the first available therapist to assign the booking to.
+  -- This guarantees we get a valid org_id and branch_id as well.
+  SELECT id, name, branch_id, org_id INTO v_therapist_id, v_therapist_name, v_branch_id, v_org_id
   FROM therapists 
-  WHERE org_id = v_org_id 
   LIMIT 1;
 
   IF v_therapist_id IS NULL THEN
-    RETURN json_build_object('success', false, 'error', 'No therapist found in organization.');
+    RETURN json_build_object('success', false, 'error', 'No therapists exist in the database. Please add a therapist first.');
   END IF;
 
   -- 4. Check if Patient exists by phone
