@@ -30,16 +30,14 @@ BEGIN
     RETURN json_build_object('success', false, 'error', 'No organization found.');
   END IF;
 
-  -- 2. Get default Branch
-  SELECT id INTO v_branch_id FROM branches WHERE org_id = v_org_id LIMIT 1;
-  IF v_branch_id IS NULL THEN
-    RETURN json_build_object('success', false, 'error', 'No branch found.');
-  END IF;
+  -- 2 & 3. Get default Therapist and their Branch
+  SELECT id, name, branch_id INTO v_therapist_id, v_therapist_name, v_branch_id 
+  FROM therapists 
+  WHERE org_id = v_org_id 
+  LIMIT 1;
 
-  -- 3. Get default Therapist for this branch
-  SELECT id, name INTO v_therapist_id, v_therapist_name FROM therapists WHERE branch_id = v_branch_id LIMIT 1;
   IF v_therapist_id IS NULL THEN
-    RETURN json_build_object('success', false, 'error', 'No therapist found in branch.');
+    RETURN json_build_object('success', false, 'error', 'No therapist found in organization.');
   END IF;
 
   -- 4. Check if Patient exists by phone
