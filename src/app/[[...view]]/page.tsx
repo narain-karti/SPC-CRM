@@ -24,37 +24,37 @@ import { NotificationsView } from "@/components/crm/views/NotificationsView";
 import { SettingsView } from "@/components/crm/views/SettingsView";
 import { ProfileView } from "@/components/crm/views/ProfileView";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 export default function Home() {
   const { currentView, setView, theme, commandOpen, setCommandOpen } = useAppStore();
   const params = useParams();
+  const router = useRouter();
 
-  // Sync URL to state
+  // Sync URL changes to Zustand state
   useEffect(() => {
-    if (params?.view) {
-      const viewParam = Array.isArray(params.view) ? params.view[0] : params.view;
-      // Define valid views to prevent arbitrary URLs from breaking the app
-      const validViews = [
-        "dashboard", "patients", "patient_detail", "appointments", "calendar", 
-        "therapists", "employees", "attendance", "billing", "reports", 
-        "analytics", "leads", "notifications", "settings", "profile"
-      ];
-      if (viewParam && viewParam !== currentView && validViews.includes(viewParam)) {
+    const viewParam = Array.isArray(params?.view) ? params.view[0] : params?.view;
+    const validViews = [
+      "dashboard", "patients", "patient_detail", "appointments", "calendar", 
+      "therapists", "employees", "attendance", "billing", "reports", 
+      "analytics", "leads", "notifications", "settings", "profile"
+    ];
+    if (viewParam && validViews.includes(viewParam)) {
+      if (viewParam !== currentView) {
         setView(viewParam as any);
       }
-    } else if (currentView !== "dashboard") {
+    } else if (!viewParam && currentView !== "dashboard") {
       setView("dashboard");
     }
-  }, [params, setView]);
+  }, [params?.view, setView]); // Only depend on params.view
 
-  // Sync state to URL without triggering a full page reload
+  // Sync Zustand state changes to URL using Next.js router
   useEffect(() => {
     const targetPath = currentView === "dashboard" ? "/" : `/${currentView}`;
     if (window.location.pathname !== targetPath) {
-      window.history.pushState(null, "", targetPath);
+      router.push(targetPath);
     }
-  }, [currentView]);
+  }, [currentView, router]);
 
   // Apply theme class on documentElement
   useEffect(() => {
