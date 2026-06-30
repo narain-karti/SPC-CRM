@@ -24,8 +24,37 @@ import { NotificationsView } from "@/components/crm/views/NotificationsView";
 import { SettingsView } from "@/components/crm/views/SettingsView";
 import { ProfileView } from "@/components/crm/views/ProfileView";
 
+import { useParams } from "next/navigation";
+
 export default function Home() {
-  const { currentView, theme, commandOpen, setCommandOpen } = useAppStore();
+  const { currentView, setView, theme, commandOpen, setCommandOpen } = useAppStore();
+  const params = useParams();
+
+  // Sync URL to state
+  useEffect(() => {
+    if (params?.view) {
+      const viewParam = Array.isArray(params.view) ? params.view[0] : params.view;
+      // Define valid views to prevent arbitrary URLs from breaking the app
+      const validViews = [
+        "dashboard", "patients", "patient_detail", "appointments", "calendar", 
+        "therapists", "employees", "attendance", "billing", "reports", 
+        "analytics", "leads", "notifications", "settings", "profile"
+      ];
+      if (viewParam && viewParam !== currentView && validViews.includes(viewParam)) {
+        setView(viewParam as any);
+      }
+    } else if (currentView !== "dashboard") {
+      setView("dashboard");
+    }
+  }, [params, setView]);
+
+  // Sync state to URL without triggering a full page reload
+  useEffect(() => {
+    const targetPath = currentView === "dashboard" ? "/" : `/${currentView}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState(null, "", targetPath);
+    }
+  }, [currentView]);
 
   // Apply theme class on documentElement
   useEffect(() => {
