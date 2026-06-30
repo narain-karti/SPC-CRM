@@ -19,4 +19,5 @@ ON CONFLICT (role) DO UPDATE SET password = EXCLUDED.password;
 
 -- Allow reading from the frontend (for the demo Topbar switcher)
 ALTER TABLE role_credentials ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Anyone can read role credentials" ON role_credentials;
 CREATE POLICY "Anyone can read role credentials" ON role_credentials FOR SELECT USING (true);

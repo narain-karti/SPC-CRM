@@ -167,23 +167,16 @@ export function Booking() {
                      </div>
                      <div className="space-y-2">
                        <label className="font-semibold text-[#111111]">Type</label>
-                       <input 
-                         type="text" 
+                       <select 
                          value={type}
                          onChange={(e) => setType(e.target.value)}
-                         placeholder="Consultation" 
                          className="w-full p-4 rounded-2xl border border-[#E9E9E9] focus:border-[#111111] outline-none transition-colors" 
-                       />
-                     </div>
-                     <div className="space-y-2">
-                       <label className="font-semibold text-[#111111]">Status</label>
-                       <input 
-                         type="text" 
-                         value={status}
-                         onChange={(e) => setStatus(e.target.value)}
-                         placeholder="Pending" 
-                         className="w-full p-4 rounded-2xl border border-[#E9E9E9] focus:border-[#111111] outline-none transition-colors" 
-                       />
+                       >
+                         <option value="consultation">Consultation</option>
+                         <option value="therapy">Therapy</option>
+                         <option value="follow_up">Follow Up</option>
+                         <option value="assessment">Assessment</option>
+                       </select>
                      </div>
                      <div className="space-y-2 md:col-span-2">
                        <label className="font-semibold text-[#111111]">Notes</label>

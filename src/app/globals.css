@@ -143,7 +143,7 @@
     font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
   /* Only the main content area should scroll, contained within fixed-height app shell */
-  #__next, body > div {
+  #__next, body > div:not([data-radix-popper-content-wrapper]) {
     height: 100vh;
     height: 100dvh;
   }

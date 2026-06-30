@@ -44,6 +44,9 @@ async function startServer() {
         timeStr = `${timeStr}:00`;
       }
 
+      const validTypes = ['consultation', 'therapy', 'follow_up', 'assessment'];
+      const finalType = type && validTypes.includes(type.toLowerCase()) ? type.toLowerCase() : 'consultation';
+
       // Call the RPC function to bypass RLS securely and auto-assign organization/branch/therapist
       const { data, error } = await supabase.rpc('create_website_booking', {
         p_patient_name: patient_name,
@@ -51,7 +54,7 @@ async function startServer() {
         p_date: date,
         p_time: timeStr,
         p_duration: duration ? parseInt(duration) : 30,
-        p_type: type || 'consultation',
+        p_type: finalType,
         p_notes: notes || ''
       });
 
