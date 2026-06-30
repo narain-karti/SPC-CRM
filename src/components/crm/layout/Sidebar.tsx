@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronDown, Sparkles, Building2, Plus, Zap, X
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { branches } from "@/lib/data";
+import { useBranches } from "@/hooks/use-supabase-query";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Avatar } from "../Avatar";
@@ -58,6 +58,7 @@ export const roleUser: Record<Role, { name: string; color: string; email: string
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar, currentView, setView, currentRole, currentBranchId, setBranch } = useAppStore();
   const [branchOpen, setBranchOpen] = useState(false);
+  const { data: branches = [] } = useBranches();
 
   const filteredNav = navItems.filter(n => n.roles.includes(currentRole));
   const filteredBottom = bottomNav.filter(n => n.roles.includes(currentRole));
@@ -80,6 +81,7 @@ export function Sidebar() {
         currentBranchId={currentBranchId}
         setBranch={setBranch}
         currentBranch={currentBranch}
+        branches={branches}
         user={user}
         filteredNav={filteredNav}
         filteredBottom={filteredBottom}
@@ -97,6 +99,7 @@ export function MobileSidebar() {
     currentView, setView, currentRole, currentBranchId, setBranch,
   } = useAppStore();
   const [branchOpen, setBranchOpen] = useState(false);
+  const { data: branches = [] } = useBranches();
 
   const filteredNav = navItems.filter(n => n.roles.includes(currentRole));
   const filteredBottom = bottomNav.filter(n => n.roles.includes(currentRole));
@@ -136,6 +139,7 @@ export function MobileSidebar() {
               currentBranchId={currentBranchId}
               setBranch={setBranch}
               currentBranch={currentBranch}
+              branches={branches}
               user={user}
               filteredNav={filteredNav}
               filteredBottom={filteredBottom}
@@ -158,7 +162,8 @@ function SidebarContent(props: {
   currentRole: Role;
   currentBranchId: string;
   setBranch: (id: string) => void;
-  currentBranch?: typeof branches[number];
+  currentBranch?: any;
+  branches: any[];
   user: { name: string; color: string };
   filteredNav: NavItem[];
   filteredBottom: NavItem[];
@@ -168,7 +173,7 @@ function SidebarContent(props: {
 }) {
   const {
     collapsed, toggleSidebar, currentView, setView, currentRole,
-    currentBranchId, setBranch, currentBranch, user,
+    currentBranchId, setBranch, currentBranch, branches, user,
     filteredNav, filteredBottom, branchOpen, setBranchOpen, isMobile,
   } = props;
 
