@@ -23,9 +23,13 @@ import { LeadsView } from "@/components/crm/views/LeadsView";
 import { NotificationsView } from "@/components/crm/views/NotificationsView";
 import { SettingsView } from "@/components/crm/views/SettingsView";
 import { ProfileView } from "@/components/crm/views/ProfileView";
+import { useSupabaseRealtime } from "@/hooks/use-supabase-query";
 
 export default function Home() {
   const { currentView, setView, theme, commandOpen, setCommandOpen } = useAppStore();
+  
+  // Enable realtime data sync
+  useSupabaseRealtime();
 
   // Sync URL to state only on initial mount
   useEffect(() => {

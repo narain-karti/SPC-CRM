@@ -671,3 +671,57 @@ export function useCreateTherapist() {
     }
   });
 }
+
+// ============================================================
+// Realtime Data Sync Hook
+// ============================================================
+import { useEffect } from "react";
+
+export function useSupabaseRealtime() {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    // Subscribe to all postgres changes in the public schema
+    const channel = supabase
+      .channel("supabase-realtime-sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public" },
+        (payload) => {
+          const table = payload.table;
+          
+          // Invalidate React Query caches depending on the table that updated
+          if (table === "patients") {
+            queryClient.invalidateQueries({ queryKey: ["patients"] });
+            queryClient.invalidateQueries({ queryKey: ["patient"] });
+            queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+          } else if (table === "appointments") {
+            queryClient.invalidateQueries({ queryKey: ["appointments"] });
+            queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+          } else if (table === "therapists") {
+            queryClient.invalidateQueries({ queryKey: ["therapists"] });
+          } else if (table === "employees") {
+            queryClient.invalidateQueries({ queryKey: ["employees"] });
+          } else if (table === "leads") {
+            queryClient.invalidateQueries({ queryKey: ["leads"] });
+            queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+          } else if (table === "invoices") {
+            queryClient.invalidateQueries({ queryKey: ["invoices"] });
+            queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+          } else if (table === "notifications") {
+            queryClient.invalidateQueries({ queryKey: ["notifications"] });
+          } else if (table === "timeline_events") {
+            queryClient.invalidateQueries({ queryKey: ["timeline"] });
+          } else if (table === "attendance") {
+            queryClient.invalidateQueries({ queryKey: ["attendance"] });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+}
+
