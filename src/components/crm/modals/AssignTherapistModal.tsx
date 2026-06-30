@@ -84,6 +84,8 @@ export function AssignTherapistModal({ open, onOpenChange, appointmentId }: Prop
             }}
             options={therapists.map(t => ({ value: t.id, label: t.name }))}
             invalid={!!error}
+            placeholder="Select a therapist..."
+            className="w-full"
           />
         </Field>
       </div>

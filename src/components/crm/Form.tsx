@@ -76,11 +76,11 @@ export function SelectInput({ value, onValueChange, placeholder, options, classN
   return (
     <Select value={value} onValueChange={onValueChange}>
       <SelectTrigger className={cn(
-        "h-10 rounded-xl",
+        "h-10 rounded-xl w-full",
         invalid && "border-rose-400 ring-1 ring-rose-200",
         className
       )}>
-        <SelectValue placeholder={placeholder} />
+        <SelectValue placeholder={placeholder || "Select an option..."} />
       </SelectTrigger>
       <SelectContent className="rounded-xl">
         {options.map(o => (
