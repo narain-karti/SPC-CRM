@@ -19,6 +19,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { useAppointments, useDeleteAppointment, useUpdateAppointment } from "@/hooks/use-supabase-query";
 import { toast } from "sonner";
 import type { AppointmentStatus } from "@/lib/types";
+import { AssignTherapistModal } from "../modals/AssignTherapistModal";
 
 type ViewMode = "list" | "day" | "week";
 
@@ -38,6 +39,8 @@ export function AppointmentsView() {
   const [showModal, setShowModal] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [assignApptId, setAssignApptId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     return appointments.filter(a => {
@@ -260,6 +263,7 @@ export function AppointmentsView() {
                     onOpenPatient={() => openPatient(a.patientId)}
                     onStatus={(s) => setStatus(a.id, s)}
                     onDelete={() => handleDelete(a.id)}
+                    onAssign={() => { setAssignApptId(a.id); setAssignModalOpen(true); }}
                   />
                 ))}
               </div>
@@ -299,18 +303,20 @@ export function AppointmentsView() {
       )}
 
       <AppointmentModal open={showModal} onOpenChange={setShowModal} />
+      <AssignTherapistModal open={assignModalOpen} onOpenChange={setAssignModalOpen} appointmentId={assignApptId} />
     </div>
   );
 }
 
 function AppointmentCard({
-  appointment, index, onOpenPatient, onStatus, onDelete,
+  appointment, index, onOpenPatient, onStatus, onDelete, onAssign
 }: {
   appointment: any;
   index: number;
   onOpenPatient: () => void;
   onStatus: (s: AppointmentStatus) => void;
   onDelete: () => void;
+  onAssign?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const branch = branches.find(b => b.id === appointment.branchId);
@@ -365,10 +371,23 @@ function AppointmentCard({
           <Avatar name={appointment.patientName} color="#D6F04C" size="sm" />
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-foreground truncate">{appointment.patientName}</div>
-            <div className="text-[11px] text-muted-foreground truncate">{appointment.therapistName}</div>
+            {appointment.therapistName ? (
+              <div className="text-[11px] text-muted-foreground truncate">{appointment.therapistName}</div>
+            ) : (
+              <div className="text-[11px] font-semibold text-rose-500 truncate flex items-center gap-1">
+                Unassigned
+              </div>
+            )}
           </div>
         </div>
       </button>
+      {!appointment.therapistName && onAssign && (
+        <div className="mb-2">
+          <Button variant="outline" size="sm" className="w-full text-xs h-7 border-dashed border-rose-500/50 text-rose-500 hover:bg-rose-500/10" onClick={onAssign}>
+            Assign Doctor
+          </Button>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
           <span className="h-1.5 w-1.5 rounded-full" style={{ background: branch?.color }} />
