@@ -24,37 +24,50 @@ import { NotificationsView } from "@/components/crm/views/NotificationsView";
 import { SettingsView } from "@/components/crm/views/SettingsView";
 import { ProfileView } from "@/components/crm/views/ProfileView";
 
-import { useParams, useRouter } from "next/navigation";
-
 export default function Home() {
   const { currentView, setView, theme, commandOpen, setCommandOpen } = useAppStore();
-  const params = useParams();
-  const router = useRouter();
 
-  // Sync URL changes to Zustand state
+  // Sync URL to state only on initial mount
   useEffect(() => {
-    const viewParam = Array.isArray(params?.view) ? params.view[0] : params?.view;
+    const path = window.location.pathname.replace(/^\//, "");
     const validViews = [
       "dashboard", "patients", "patient_detail", "appointments", "calendar", 
       "therapists", "employees", "attendance", "billing", "reports", 
       "analytics", "leads", "notifications", "settings", "profile"
     ];
-    if (viewParam && validViews.includes(viewParam)) {
-      if (viewParam !== currentView) {
-        setView(viewParam as any);
-      }
-    } else if (!viewParam && currentView !== "dashboard") {
+    if (path && validViews.includes(path)) {
+      setView(path as any);
+    } else {
       setView("dashboard");
     }
-  }, [params?.view, setView]); // Only depend on params.view
+  }, [setView]);
 
-  // Sync Zustand state changes to URL using Next.js router
+  // Sync state changes to URL using shallow history push
   useEffect(() => {
     const targetPath = currentView === "dashboard" ? "/" : `/${currentView}`;
     if (window.location.pathname !== targetPath) {
-      router.push(targetPath);
+      window.history.pushState(null, "", targetPath);
     }
-  }, [currentView, router]);
+  }, [currentView]);
+
+  // Listen to browser Back/Forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.replace(/^\//, "");
+      const validViews = [
+        "dashboard", "patients", "patient_detail", "appointments", "calendar", 
+        "therapists", "employees", "attendance", "billing", "reports", 
+        "analytics", "leads", "notifications", "settings", "profile"
+      ];
+      if (path && validViews.includes(path)) {
+        setView(path as any);
+      } else {
+        setView("dashboard");
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [setView]);
 
   // Apply theme class on documentElement
   useEffect(() => {
