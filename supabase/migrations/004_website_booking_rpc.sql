@@ -63,9 +63,9 @@ BEGIN
 
   -- 7. Add a notification for Receptionist/Admins
   INSERT INTO notifications (
-    org_id, branch_id, type, title, message, priority
+    org_id, type, title, message, priority
   ) VALUES (
-    v_org_id, v_branch_id, 'appointment', 'New Website Booking', 
+    v_org_id, 'appointment', 'New Website Booking', 
     p_patient_name || ' booked a ' || p_type || ' for ' || p_date || ' at ' || p_time || '. Please assign a therapist.', 'high'
   );
 
