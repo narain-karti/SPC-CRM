@@ -712,7 +712,7 @@ export function useSupabaseRealtime() {
             queryClient.invalidateQueries({ queryKey: ["notifications"] });
           } else if (table === "timeline_events") {
             queryClient.invalidateQueries({ queryKey: ["timeline"] });
-          } else if (table === "attendance") {
+          } else if (table === "attendance_records") {
             queryClient.invalidateQueries({ queryKey: ["attendance"] });
           }
         }
