@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Modal } from "../Modal";
 import { Field, TextInput, TextArea, SelectInput, Button } from "../Form";
 import { todayISO, cn } from "@/lib/utils";
@@ -42,6 +42,15 @@ export function AppointmentModal({ open, onOpenChange, presetPatientId }: Props)
     notes: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setForm(f => ({
+      ...f,
+      patientId: f.patientId || presetPatientId || (rawPatients[0]?.id || ""),
+      therapistId: f.therapistId || (therapists[0]?.id || ""),
+      branchId: f.branchId || (branches.find(b => b.id === currentBranchId)?.id || branches[0]?.id || ""),
+    }));
+  }, [rawPatients, therapists, branches, currentBranchId, presetPatientId]);
 
   function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm(f => ({ ...f, [key]: value }));

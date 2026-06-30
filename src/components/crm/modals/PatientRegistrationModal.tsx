@@ -64,6 +64,14 @@ export function PatientRegistrationModal({ open, onOpenChange }: Props) {
   const [data, setData] = useState<FormData>(initial);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
 
+  useEffect(() => {
+    setData(d => ({
+      ...d,
+      branchId: d.branchId || (branches.find(b => b.id === currentBranchId)?.id || branches[0]?.id || ""),
+      therapistId: d.therapistId || (therapists[0]?.id || ""),
+    }));
+  }, [branches, therapists, currentBranchId]);
+
   // Initialize form with fetched data
   useEffect(() => {
     if (open) {
